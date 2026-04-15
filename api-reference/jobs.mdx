@@ -1,0 +1,561 @@
+---
+title: "Jobs API — job postings, salary insights, and matching"
+description: "Browse and filter job listings, create and manage postings as a recruiter, use AI match scores to evaluate fit, and look up market salary data."
+---
+
+The Jobs API lets job seekers browse and filter postings, and gives recruiters full control over the job lifecycle: create, update, approve, reject, and close positions. AI-powered match scores are available both before and after applying.
+
+Job postings go through a status workflow: `draft` → `pending_approval` → `live` (or `rejected`) → `closed`. Only `live` jobs are visible to candidates.
+
+---
+
+## GET /api/v1/jobs
+
+List active job postings. Supports filtering and text search.
+
+**Auth required:** Yes
+
+<ParamField query="job_type" type="string">
+  Filter by employment type. One of `fulltime`, `parttime`, `contract`, `internship`, `remote`.
+</ParamField>
+
+<ParamField query="location" type="string">
+  Filter by location string (partial match supported).
+</ParamField>
+
+<ParamField query="remote_ok" type="boolean">
+  When `true`, return only remote-friendly postings.
+</ParamField>
+
+<ParamField query="search" type="string">
+  Full-text search across job titles and descriptions.
+</ParamField>
+
+<ParamField query="skip" type="integer" default="0">
+  Number of results to skip (for pagination).
+</ParamField>
+
+<ParamField query="limit" type="integer" default="20">
+  Maximum results to return. Cannot exceed `50`.
+</ParamField>
+
+### Response
+
+Returns an array of job objects.
+
+<ResponseField name="id" type="string (UUID)">
+  Job ID.
+</ResponseField>
+
+<ResponseField name="title" type="string">
+  Job title.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Full job description.
+</ResponseField>
+
+<ResponseField name="job_type" type="string">
+  Employment type: `fulltime`, `parttime`, `contract`, `internship`, or `remote`.
+</ResponseField>
+
+<ResponseField name="location" type="string">
+  Office location or city.
+</ResponseField>
+
+<ResponseField name="remote_ok" type="boolean">
+  Whether remote work is permitted.
+</ResponseField>
+
+<ResponseField name="salary_min" type="integer">
+  Minimum salary in local currency (if provided).
+</ResponseField>
+
+<ResponseField name="salary_max" type="integer">
+  Maximum salary in local currency (if provided).
+</ResponseField>
+
+<ResponseField name="is_active" type="boolean">
+  Whether the posting is currently accepting applications.
+</ResponseField>
+
+<ResponseField name="company_name" type="string">
+  Name of the hiring company.
+</ResponseField>
+
+<ResponseField name="match_score" type="number">
+  AI-computed match percentage against the current user's resume. `null` if no resume uploaded.
+</ResponseField>
+
+<CodeGroup>
+```bash Request
+curl "http://localhost:8000/api/v1/jobs?job_type=fulltime&remote_ok=true&search=python&limit=10" \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+[
+  {
+    "id": "c4d5e6f7-a1b2-3456-cdef-012345678901",
+    "title": "Senior Python Engineer",
+    "description": "Build scalable backend services...",
+    "job_type": "fulltime",
+    "location": "San Francisco",
+    "remote_ok": true,
+    "salary_min": 140000,
+    "salary_max": 180000,
+    "is_active": true,
+    "company_name": "Acme Corp",
+    "match_score": 88.4
+  }
+]
+```
+</CodeGroup>
+
+---
+
+## GET /api/v1/jobs/{job_id}
+
+Retrieve a single job posting by ID.
+
+**Auth required:** Yes
+
+<ParamField path="job_id" type="string (UUID)" required>
+  The job ID.
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl http://localhost:8000/api/v1/jobs/c4d5e6f7-a1b2-3456-cdef-012345678901 \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+{
+  "id": "c4d5e6f7-a1b2-3456-cdef-012345678901",
+  "title": "Senior Python Engineer",
+  "description": "Build scalable backend services...",
+  "job_type": "fulltime",
+  "location": "San Francisco",
+  "remote_ok": true,
+  "salary_min": 140000,
+  "salary_max": 180000,
+  "is_active": true,
+  "company_name": "Acme Corp",
+  "match_score": null
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `401` | Not authenticated |
+| `404` | Job not found |
+
+---
+
+## POST /api/v1/jobs
+
+Create a new job posting. The job starts in `pending_approval` status and is not visible to candidates until approved.
+
+**Auth required:** Yes — recruiter or admin role required  
+**Returns:** `201 Created`
+
+<ParamField body="title" type="string" required>
+  Job title (e.g. `"Senior Backend Engineer"`).
+</ParamField>
+
+<ParamField body="description" type="string" required>
+  Full job description.
+</ParamField>
+
+<ParamField body="requirements" type="string[]" default="[]">
+  List of skill or qualification requirements.
+</ParamField>
+
+<ParamField body="job_type" type="string" required>
+  Employment type: `fulltime`, `parttime`, `contract`, `internship`, or `remote`.
+</ParamField>
+
+<ParamField body="location" type="string" required>
+  Office location (e.g. `"New York, NY"`).
+</ParamField>
+
+<ParamField body="remote_ok" type="boolean" default="false">
+  Whether remote work is an option.
+</ParamField>
+
+<ParamField body="salary_min" type="integer">
+  Minimum salary. Optional.
+</ParamField>
+
+<ParamField body="salary_max" type="integer">
+  Maximum salary. Optional.
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl -X POST http://localhost:8000/api/v1/jobs \
+  -H "Authorization: Bearer <your_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Backend Engineer",
+    "description": "Join our platform team to build APIs at scale.",
+    "requirements": ["Python", "FastAPI", "PostgreSQL"],
+    "job_type": "fulltime",
+    "location": "Austin, TX",
+    "remote_ok": true,
+    "salary_min": 120000,
+    "salary_max": 160000
+  }'
+```
+
+```json Response
+{
+  "id": "e6f7a1b2-c3d4-5678-efab-234567890123",
+  "title": "Backend Engineer",
+  "description": "Join our platform team to build APIs at scale.",
+  "job_type": "fulltime",
+  "location": "Austin, TX",
+  "remote_ok": true,
+  "salary_min": 120000,
+  "salary_max": 160000,
+  "is_active": false,
+  "company_name": "Your Company",
+  "match_score": null
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `401` | Not authenticated |
+| `403` | User is not a recruiter or admin |
+| `422` | Validation error (missing required fields) |
+
+---
+
+## PATCH /api/v1/jobs/{job_id}
+
+Update an existing job posting. All fields are optional — only send the fields you want to change.
+
+**Auth required:** Yes — recruiter or admin role required
+
+<ParamField path="job_id" type="string (UUID)" required>
+  The job ID.
+</ParamField>
+
+<ParamField body="title" type="string">
+  Updated job title.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Updated description.
+</ParamField>
+
+<ParamField body="requirements" type="string[]">
+  Updated requirements list.
+</ParamField>
+
+<ParamField body="is_active" type="boolean">
+  Toggle the posting's active state.
+</ParamField>
+
+<ParamField body="salary_min" type="integer">
+  Updated minimum salary.
+</ParamField>
+
+<ParamField body="salary_max" type="integer">
+  Updated maximum salary.
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl -X PATCH http://localhost:8000/api/v1/jobs/e6f7a1b2-c3d4-5678-efab-234567890123 \
+  -H "Authorization: Bearer <your_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "salary_min": 130000,
+    "salary_max": 170000
+  }'
+```
+
+```json Response
+{
+  "id": "e6f7a1b2-c3d4-5678-efab-234567890123",
+  "title": "Backend Engineer",
+  "salary_min": 130000,
+  "salary_max": 170000,
+  "is_active": false,
+  "company_name": "Your Company",
+  "match_score": null
+}
+```
+</CodeGroup>
+
+---
+
+## DELETE /api/v1/jobs/{job_id}
+
+Delete a job posting permanently.
+
+**Auth required:** Yes — recruiter or admin role required  
+**Returns:** `204 No Content`
+
+<ParamField path="job_id" type="string (UUID)" required>
+  The job ID.
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl -X DELETE http://localhost:8000/api/v1/jobs/e6f7a1b2-c3d4-5678-efab-234567890123 \
+  -H "Authorization: Bearer <your_token>"
+```
+</CodeGroup>
+
+---
+
+## GET /api/v1/jobs/{job_id}/candidates
+
+Returns an AI-ranked list of candidates who have applied to this job, ordered by match score.
+
+**Auth required:** Yes — recruiter or admin role required
+
+<ParamField path="job_id" type="string (UUID)" required>
+  The job ID.
+</ParamField>
+
+<ParamField query="limit" type="integer" default="50">
+  Maximum candidates to return. Cannot exceed `100`.
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl "http://localhost:8000/api/v1/jobs/e6f7a1b2-c3d4-5678-efab-234567890123/candidates?limit=20" \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+[
+  {
+    "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "full_name": "Alex Rivera",
+    "match_score": 91.5,
+    "ats_score": 85.0,
+    "current_stage": "applied"
+  }
+]
+```
+</CodeGroup>
+
+---
+
+## GET /api/v1/jobs/{job_id}/match
+
+Returns a breakdown of how well the current user's resume matches this job, before they apply.
+
+**Auth required:** Yes
+
+<ParamField path="job_id" type="string" required>
+  The job ID.
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl http://localhost:8000/api/v1/jobs/e6f7a1b2-c3d4-5678-efab-234567890123/match \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+{
+  "overall_score": 78.2,
+  "skills_match": 85.0,
+  "experience_match": 70.0,
+  "location_match": 100.0,
+  "missing_skills": ["Docker", "Kubernetes"]
+}
+```
+</CodeGroup>
+
+---
+
+## POST /api/v1/jobs/{job_id}/approve
+
+Approve a job posting, making it live and visible to candidates. Sends job alerts to matching candidates automatically.
+
+**Auth required:** Yes — recruiter or admin role required
+
+<ParamField path="job_id" type="string" required>
+  The job ID.
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl -X POST http://localhost:8000/api/v1/jobs/e6f7a1b2-c3d4-5678-efab-234567890123/approve \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+{
+  "id": "e6f7a1b2-c3d4-5678-efab-234567890123",
+  "title": "Backend Engineer",
+  "status": "live",
+  "approved_at": "2026-04-15T10:30:00",
+  "message": "Job 'Backend Engineer' is now LIVE — candidates can apply"
+}
+```
+</CodeGroup>
+
+---
+
+## POST /api/v1/jobs/{job_id}/reject
+
+Reject a job posting (e.g. budget not confirmed). The job moves to `rejected` status.
+
+**Auth required:** Yes — recruiter or admin role required
+
+<ParamField path="job_id" type="string" required>
+  The job ID.
+</ParamField>
+
+<ParamField body="reason" type="string">
+  Reason for rejection. Defaults to `"Budget not approved"` if omitted.
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl -X POST http://localhost:8000/api/v1/jobs/e6f7a1b2-c3d4-5678-efab-234567890123/reject \
+  -H "Authorization: Bearer <your_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "Headcount freeze this quarter"}'
+```
+
+```json Response
+{
+  "id": "e6f7a1b2-c3d4-5678-efab-234567890123",
+  "status": "rejected"
+}
+```
+</CodeGroup>
+
+---
+
+## POST /api/v1/jobs/{job_id}/close
+
+Close a job posting. Use this when the position has been filled or cancelled.
+
+**Auth required:** Yes — recruiter or admin role required
+
+<ParamField path="job_id" type="string" required>
+  The job ID.
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl -X POST http://localhost:8000/api/v1/jobs/e6f7a1b2-c3d4-5678-efab-234567890123/close \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+{
+  "id": "e6f7a1b2-c3d4-5678-efab-234567890123",
+  "status": "closed"
+}
+```
+</CodeGroup>
+
+---
+
+## Salary Insights (`/api/v1/salary`)
+
+HireFlow aggregates salary data from job postings to provide market benchmarks by role, location, and experience level.
+
+### GET /api/v1/salary/insights
+
+Returns market salary data for a role — minimum, maximum, average, and percentile breakdown.
+
+**Auth required:** Yes
+
+<ParamField query="job_title" type="string" required>
+  The role to look up (e.g. `"Senior Backend Engineer"`).
+</ParamField>
+
+<ParamField query="location" type="string">
+  Optional city or region filter (e.g. `"Bangalore"`).
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl "http://localhost:8000/api/v1/salary/insights?job_title=Backend+Engineer&location=Bangalore" \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+{
+  "job_title": "Backend Engineer",
+  "location": "Bangalore",
+  "salary_min": 1200000,
+  "salary_max": 2800000,
+  "salary_avg": 1900000,
+  "sample_size": 42
+}
+```
+</CodeGroup>
+
+---
+
+### GET /api/v1/salary/by-location
+
+Compare salaries for the same role across different cities.
+
+**Auth required:** Yes
+
+<ParamField query="job_title" type="string" required>
+  The role to compare across locations.
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl "http://localhost:8000/api/v1/salary/by-location?job_title=Backend+Engineer" \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+[
+  { "location": "Bangalore", "salary_avg": 1900000, "sample_size": 42 },
+  { "location": "Mumbai", "salary_avg": 2100000, "sample_size": 18 },
+  { "location": "Remote", "salary_avg": 2400000, "sample_size": 31 }
+]
+```
+</CodeGroup>
+
+---
+
+### GET /api/v1/salary/top-paying
+
+Returns the top-paying roles currently on HireFlow.
+
+**Auth required:** Yes
+
+<ParamField query="limit" type="integer" default="10">
+  Number of roles to return. Maximum `20`.
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl "http://localhost:8000/api/v1/salary/top-paying?limit=5" \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+[
+  { "job_title": "Staff Engineer", "salary_avg": 4500000, "sample_size": 8 },
+  { "job_title": "Engineering Manager", "salary_avg": 4200000, "sample_size": 12 },
+  { "job_title": "Principal Engineer", "salary_avg": 3900000, "sample_size": 6 }
+]
+```
+</CodeGroup>

@@ -1,0 +1,383 @@
+---
+title: "Referrals API — insider network and referral codes"
+description: "Generate shareable referral links, track signups and hires, validate referral codes, and request insider referrals to boost application ranking."
+---
+
+The Referrals API powers HireFlow's insider network. Any authenticated user can generate a referral link — optionally tied to a specific job — and share it with candidates. When someone registers using the link, the referral is tracked through to their first application and hire.
+
+Insider referrals are a separate but related feature: a candidate already in the system can request a referral from someone who has worked at the target company. When an insider approves, a boost is applied to the applicant's ranking for that role.
+
+---
+
+## Referral model fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Referral record ID |
+| `referral_code` | string | Unique short code (e.g. `"ALEX-XK9P"`) |
+| `job_id` | UUID \| null | Job this referral is tied to, if any |
+| `status` | string | `pending`, `signed_up`, `applied`, or `hired` |
+| `reward_granted` | boolean | Whether the referral reward has been issued |
+| `referral_url` | string | Full shareable URL including the referral code |
+
+---
+
+## POST /api/v1/referrals
+
+Generate a new referral link. Optionally tie it to a specific job posting.
+
+**Auth required:** Yes  
+**Returns:** `201 Created`
+
+<ParamField body="job_id" type="string (UUID)">
+  The job to associate this referral with. Optional — omit to create a general referral link.
+</ParamField>
+
+### Response
+
+Returns a `ReferralOut` object.
+
+<ResponseField name="id" type="string (UUID)">
+  Referral record ID.
+</ResponseField>
+
+<ResponseField name="referral_code" type="string">
+  Unique code embedded in the referral URL.
+</ResponseField>
+
+<ResponseField name="job_id" type="string (UUID)">
+  The associated job ID, or `null` for general referrals.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Current referral status: `pending`, `signed_up`, `applied`, or `hired`.
+</ResponseField>
+
+<ResponseField name="reward_granted" type="boolean">
+  `true` if the reward for this referral has been issued.
+</ResponseField>
+
+<ResponseField name="referral_url" type="string">
+  Complete shareable URL. Share this with the person you want to refer.
+</ResponseField>
+
+<CodeGroup>
+```bash Request
+curl -X POST http://localhost:8000/api/v1/referrals \
+  -H "Authorization: Bearer <your_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "job_id": "c4d5e6f7-a1b2-3456-cdef-012345678901"
+  }'
+```
+
+```json Response
+{
+  "id": "g8h9i0j1-k2l3-4567-ghij-456789012345",
+  "referral_code": "ALEX-XK9P",
+  "job_id": "c4d5e6f7-a1b2-3456-cdef-012345678901",
+  "status": "pending",
+  "reward_granted": false,
+  "referral_url": "http://localhost:3000/register?ref=ALEX-XK9P"
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `401` | Not authenticated |
+
+---
+
+## GET /api/v1/referrals
+
+List all referral links created by the current user.
+
+**Auth required:** Yes
+
+Returns an array of `ReferralOut` objects.
+
+<CodeGroup>
+```bash Request
+curl http://localhost:8000/api/v1/referrals \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+[
+  {
+    "id": "g8h9i0j1-k2l3-4567-ghij-456789012345",
+    "referral_code": "ALEX-XK9P",
+    "job_id": "c4d5e6f7-a1b2-3456-cdef-012345678901",
+    "status": "applied",
+    "reward_granted": false,
+    "referral_url": "http://localhost:3000/register?ref=ALEX-XK9P"
+  },
+  {
+    "id": "h9i0j1k2-l3m4-5678-hijk-567890123456",
+    "referral_code": "ALEX-MN7Q",
+    "job_id": null,
+    "status": "signed_up",
+    "reward_granted": false,
+    "referral_url": "http://localhost:3000/register?ref=ALEX-MN7Q"
+  }
+]
+```
+</CodeGroup>
+
+---
+
+## GET /api/v1/referrals/stats
+
+Returns aggregated referral stats for the current user.
+
+**Auth required:** Yes
+
+### Response
+
+<ResponseField name="total_referrals" type="integer">
+  Total referral links created.
+</ResponseField>
+
+<ResponseField name="signed_up" type="integer">
+  Number of referred users who completed registration.
+</ResponseField>
+
+<ResponseField name="applied" type="integer">
+  Number of referred users who applied to at least one job.
+</ResponseField>
+
+<ResponseField name="hired" type="integer">
+  Number of referred users who were hired.
+</ResponseField>
+
+<ResponseField name="rewards_earned" type="integer">
+  Total number of rewards earned from successful referrals.
+</ResponseField>
+
+<CodeGroup>
+```bash Request
+curl http://localhost:8000/api/v1/referrals/stats \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+{
+  "total_referrals": 8,
+  "signed_up": 5,
+  "applied": 3,
+  "hired": 1,
+  "rewards_earned": 1
+}
+```
+</CodeGroup>
+
+---
+
+## GET /api/v1/referrals/validate/{code}
+
+Validate a referral code. This is a public endpoint — no authentication required. Use it on the registration page to confirm a code is valid before showing the referral UI.
+
+**Auth required:** No
+
+<ParamField path="code" type="string" required>
+  The referral code to validate.
+</ParamField>
+
+### Response
+
+<ResponseField name="valid" type="boolean">
+  `true` if the code exists.
+</ResponseField>
+
+<ResponseField name="code" type="string">
+  The validated referral code.
+</ResponseField>
+
+<ResponseField name="job_id" type="string (UUID)">
+  The job this referral is tied to, or `null`.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Current status of the referral.
+</ResponseField>
+
+<CodeGroup>
+```bash Request
+curl http://localhost:8000/api/v1/referrals/validate/ALEX-XK9P
+```
+
+```json Response
+{
+  "valid": true,
+  "code": "ALEX-XK9P",
+  "job_id": "c4d5e6f7-a1b2-3456-cdef-012345678901",
+  "status": "pending"
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `404` | Referral code does not exist |
+
+---
+
+## Insider network (`/api/v1/insider`)
+
+The insider network lets job seekers find and request referrals from people who have (or had) worked at the target company. When an insider approves, their ranking for that job is boosted in the AI matching pipeline.
+
+### POST /api/v1/insider/work-history
+
+Add a current or past company to your profile to become visible as an insider for that company.
+
+**Auth required:** Yes
+
+<ParamField body="company_name" type="string" required>
+  Name of the company to add to your work history.
+</ParamField>
+
+<ParamField body="is_current" type="boolean" default="true">
+  Whether you currently work there.
+</ParamField>
+
+<ParamField body="is_open_to_refer" type="boolean" default="true">
+  Whether you are willing to provide referrals for this company.
+</ParamField>
+
+<ParamField body="network_visible" type="boolean" default="true">
+  Whether other users can find you as an insider for this company.
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl -X POST http://localhost:8000/api/v1/insider/work-history \
+  -H "Authorization: Bearer <your_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "company_name": "Acme Corp",
+    "is_current": true,
+    "is_open_to_refer": true,
+    "network_visible": true
+  }'
+```
+
+```json Response
+{
+  "id": "d1e2f3a4-b5c6-7890-defa-234567890123",
+  "company": "Acme Corp",
+  "is_current": true
+}
+```
+</CodeGroup>
+
+---
+
+### GET /api/v1/insider/work-history
+
+Retrieve your own work history entries.
+
+**Auth required:** Yes
+
+---
+
+### GET /api/v1/insider/job/{job_id}/insiders
+
+Auto-suggest insiders at the company posting a specific job. Returns users who have worked there and are open to referring.
+
+**Auth required:** Yes
+
+<ParamField path="job_id" type="string" required>
+  The job ID to find insiders for.
+</ParamField>
+
+---
+
+### GET /api/v1/insider/search?company={name}
+
+Search for insiders by company name.
+
+**Auth required:** Yes
+
+<ParamField query="company" type="string" required>
+  Company name to search for insiders at.
+</ParamField>
+
+---
+
+### POST /api/v1/insider/request
+
+Request a referral from a specific insider for a job.
+
+**Auth required:** Yes
+
+<ParamField body="insider_id" type="string (UUID)" required>
+  The user ID of the insider you are requesting a referral from.
+</ParamField>
+
+<ParamField body="job_id" type="string (UUID)" required>
+  The job you want the referral for.
+</ParamField>
+
+<ParamField body="message" type="string">
+  Optional personal note to the insider explaining why you're a good fit.
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl -X POST http://localhost:8000/api/v1/insider/request \
+  -H "Authorization: Bearer <your_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "insider_id": "e2f3a4b5-c6d7-8901-efab-345678901234",
+    "job_id": "c4d5e6f7-a1b2-3456-cdef-012345678901",
+    "message": "Hi, I applied for the Backend Engineer role and think my FastAPI experience aligns well. Would you consider referring me?"
+  }'
+```
+</CodeGroup>
+
+---
+
+### PATCH /api/v1/insider/request/{request_id}
+
+Insider accepts or declines a referral request.
+
+**Auth required:** Yes (must be the insider the request was sent to)
+
+<ParamField path="request_id" type="string" required>
+  The referral request ID.
+</ParamField>
+
+<ParamField body="action" type="string" required>
+  Must be `"accept"` or `"decline"`.
+</ParamField>
+
+When an insider accepts, `boost_applied` is set to `true` and the requester's ranking for that job is boosted in the AI matching pipeline.
+
+---
+
+### GET /api/v1/insider/requests/incoming
+
+View all referral requests sent to you as an insider.
+
+**Auth required:** Yes
+
+---
+
+### GET /api/v1/insider/requests/sent
+
+View all referral requests you have sent to insiders.
+
+**Auth required:** Yes
+
+---
+
+### GET /api/v1/insider/limit
+
+Check how many referrals you have remaining this month. Insiders have a monthly cap on how many referrals they can provide.
+
+**Auth required:** Yes

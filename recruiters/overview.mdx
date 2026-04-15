@@ -1,0 +1,53 @@
+---
+title: "Recruiter guide: hire smarter with HireFlow"
+description: "Everything you need to post jobs, review AI-ranked candidates, and move applicants through your hiring pipeline — all from one dashboard."
+---
+
+HireFlow gives recruiters a full end-to-end hiring workflow: create your company profile, post approved job listings, and let the AI rank incoming candidates by semantic match score — then move them through a structured pipeline with automatic candidate notifications at every stage.
+
+<Note>
+  All recruiter endpoints are protected by the `require_recruiter` role check. Your account must have the `recruiter` (or `admin`) role to access them. Jobs you post do not become visible to candidates until an admin approves them and their status changes to `LIVE`.
+</Note>
+
+## How the recruiter workflow works
+
+<Steps>
+  <Step title="Register with the recruiter role">
+    Sign up at `POST /api/v1/auth/register` and set `"role": "recruiter"` in your request body. You will receive a JWT access token to use in all subsequent requests.
+  </Step>
+  <Step title="Set up your company profile">
+    An admin creates the company record. Once it exists, your user account is linked to that company via a `Recruiter` record. You can then view your company profile and update it at any time.
+  </Step>
+  <Step title="Create a job posting">
+    Submit a new job with `POST /api/v1/jobs`. The job starts in `DRAFT` status and moves to `PENDING_APPROVAL` automatically. It is not visible to candidates yet.
+  </Step>
+  <Step title="Wait for approval">
+    An admin or authorized recruiter reviews the job. On approval, the status becomes `LIVE` and the posting is immediately visible to job seekers. If rejected, a reason is recorded on the job.
+  </Step>
+  <Step title="Review AI-ranked candidates">
+    Once applications come in, fetch a ranked list of candidates with `GET /api/v1/jobs/{job_id}/candidates`. HireFlow uses semantic matching to order applicants by how well their resume fits the role.
+  </Step>
+  <Step title="Move candidates through the pipeline">
+    Advance or reject candidates stage by stage using `POST /api/v1/pipeline/move`. Every move is logged in the audit trail and the candidate is notified automatically.
+  </Step>
+  <Step title="Close the job when filled">
+    When the position is filled or cancelled, call `POST /api/v1/jobs/{job_id}/close` to set the status to `CLOSED`.
+  </Step>
+</Steps>
+
+## Explore the recruiter guides
+
+<CardGroup cols={2}>
+  <Card title="Company setup" icon="building" href="/recruiters/company-setup">
+    Link your account to a company and fill in your company profile before posting jobs.
+  </Card>
+  <Card title="Job postings" icon="briefcase" href="/recruiters/job-posting">
+    Create jobs, manage the approval lifecycle, and close positions when filled.
+  </Card>
+  <Card title="Candidate pipeline" icon="users" href="/recruiters/candidate-pipeline">
+    Move applicants through pipeline stages with a full audit trail and automatic notifications.
+  </Card>
+  <Card title="AI candidate matching" icon="sparkles" href="/ai/candidate-matching">
+    Understand how HireFlow ranks candidates using semantic embeddings and match scores.
+  </Card>
+</CardGroup>

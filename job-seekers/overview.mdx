@@ -1,0 +1,109 @@
+---
+title: "Job seeker guide: find your next role with HireFlow"
+description: "A complete walkthrough of the HireFlow job seeker experience — from account setup and resume upload to AI matching, applications, and pipeline tracking."
+---
+
+HireFlow is an AI-powered hiring portal that gives job seekers full transparency into how their resume performs, how well they match open roles, and exactly where they stand in every hiring pipeline. This guide walks you through every step, from creating your account to tracking an offer.
+
+## The job seeker journey
+
+<Steps>
+  <Step title="Register and log in">
+    Create your account at `/register`. Choose the **Job Seeker** role during signup. You'll receive a JWT token that authenticates all subsequent API calls.
+
+    You can optionally provide a referral code during registration to link your account to a referrer.
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/auth/register \
+      -H "Content-Type: application/json" \
+      -d '{
+        "email": "you@example.com",
+        "password": "securepassword",
+        "full_name": "Your Name",
+        "role": "jobseeker",
+        "referral_code": "FRIEND123"
+      }'
+    ```
+  </Step>
+
+  <Step title="Complete onboarding">
+    After registering, set your job preferences. HireFlow uses these to surface the most relevant matches and filter KAREN's coaching advice.
+
+    ```bash
+    curl -X PATCH http://localhost:8000/api/v1/auth/onboarding \
+      -H "Authorization: Bearer <token>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "job_titles": ["Software Engineer", "Backend Developer"],
+        "locations": ["San Francisco", "Remote"],
+        "job_type": "fulltime"
+      }'
+    ```
+  </Step>
+
+  <Step title="Upload your resume">
+    Upload a PDF or DOCX file. HireFlow immediately runs the AI pipeline: text extraction, parsing, ATS scoring, and embedding generation. Only one resume is active at a time — uploading a new file deactivates the previous one.
+
+    See [Upload and analyze your resume](/job-seekers/resume-upload) for full details.
+  </Step>
+
+  <Step title="Review your ATS score">
+    Once your resume is processed, you'll have an ATS score from 0–100 and a detailed report broken down by sections, keywords, formatting, length, and clarity. Scores above 60 (grade C or higher) move you past the ATS screening stage.
+
+    See [Understanding your ATS score](/job-seekers/ats-score) for how to read and improve your score.
+  </Step>
+
+  <Step title="Browse and apply to matched jobs">
+    HireFlow uses semantic embeddings to match your resume against live job listings — not just keyword overlap. Each match comes with a score so you know how strong a fit you are before applying.
+
+    See [How HireFlow matches you to the right jobs](/job-seekers/job-matching) for details on match scores and filters.
+  </Step>
+
+  <Step title="Track your pipeline">
+    Every application moves through a transparent pipeline:
+
+    `APPLIED` → `ATS_SCREENING` → `ROUND_1` → `ROUND_2` → `ROUND_3` → `HR_ROUND` → `OFFER` → `SELECTED`
+
+    If your resume doesn't clear the automated ATS check, the application moves to `ATS_REJECTED`. You can see the current and highest stage reached for every application.
+  </Step>
+
+  <Step title="Get coaching from KAREN">
+    KAREN is HireFlow's AI career agent. Ask KAREN to review your resume, identify skill gaps, explain your match scores, or apply to a job on your behalf. KAREN remembers your conversation history for contextual coaching over time.
+
+    See [Chat with KAREN, your AI career coach](/job-seekers/karen-ai) for example conversations and memory management.
+  </Step>
+</Steps>
+
+## Subscription tiers
+
+HireFlow offers two tiers for job seekers.
+
+| Feature | Free | Premium |
+|---|---|---|
+| Resume upload & ATS scoring | Yes | Yes |
+| Semantic job matching | Yes | Yes |
+| Basic KAREN coaching | Yes | Yes |
+| JD-specific ATS scoring | No | Yes |
+| LLM reranking for matches | No | Yes |
+| Detailed KAREN coaching | No | Yes |
+
+<Info>
+  Your subscription tier is returned in the login response and stored on your user record. Upgrade your plan from your account settings.
+</Info>
+
+## Explore the job seeker docs
+
+<CardGroup cols={2}>
+  <Card title="Resume upload" icon="upload" href="/job-seekers/resume-upload">
+    Learn what happens when you upload a resume — supported formats, the AI pipeline stages, and the data that gets extracted.
+  </Card>
+  <Card title="ATS score" icon="chart-bar" href="/job-seekers/ats-score">
+    Understand your ATS score breakdown, what each component measures, and how to improve your score.
+  </Card>
+  <Card title="Job matching" icon="magnifying-glass" href="/job-seekers/job-matching">
+    See how semantic matching works, how to filter jobs, and what the match score breakdown means.
+  </Card>
+  <Card title="KAREN AI" icon="robot" href="/job-seekers/karen-ai">
+    Chat with your AI career coach, manage conversation memory, and get brutally honest resume feedback.
+  </Card>
+</CardGroup>

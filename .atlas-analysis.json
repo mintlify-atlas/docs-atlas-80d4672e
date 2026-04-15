@@ -1,23 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "HireFlow",
+  "projectType": "saas",
+  "projectName": "HireFlow",
+  "projectDescription": "An AI-powered hiring portal that connects job seekers and recruiters with transparent, GenAI-driven resume analysis, ATS scoring, candidate matching, and a full application pipeline.",
   "theme": "luma",
-  "colors": {
-    "primary": "#6366F1",
-    "light": "#EEF2FF",
-    "dark": "#3730A3"
-  },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/akshatbh00/GenAI-Easy-Hire"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/akshatbh00/GenAI-Easy-Hire"
-    }
-  },
+  "primaryColor": "#6366F1",
+  "lightColor": "#EEF2FF",
+  "darkColor": "#3730A3",
   "navigation": {
     "tabs": [
       {
@@ -97,5 +85,37 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "AI-powered resume parsing and ATS scoring using GPT-4o-mini",
+    "Semantic job-resume matching with pgvector/Pinecone embeddings",
+    "Full hiring pipeline with kanban board and stage tracking",
+    "KAREN — an AI career coaching agent for job seekers and recruiters",
+    "Premium resume optimizer with JD-tailored bullet rewriting",
+    "Benchmark comparison against selected candidate pool",
+    "Real-time pipeline notifications via SendGrid",
+    "Transparent ATS reports showing exactly why a resume passes or fails",
+    "Insider referral network for warm introductions",
+    "Salary insights aggregated from job postings"
+  ],
+  "publicApiSurface": [
+    "POST /api/v1/auth/register",
+    "POST /api/v1/auth/login",
+    "POST /api/v1/resume/upload",
+    "GET /api/v1/resume/me",
+    "GET /api/v1/resume/{resume_id}/ats",
+    "GET /api/v1/resume/{resume_id}/benchmark",
+    "GET /api/v1/resume/{resume_id}/jobs",
+    "GET /api/v1/jobs",
+    "POST /api/v1/jobs",
+    "GET /api/v1/jobs/{job_id}/candidates",
+    "GET /api/v1/jobs/{job_id}/match",
+    "POST /api/v1/jobs/{job_id}/approve",
+    "POST /api/v1/pipeline/move",
+    "GET /api/v1/pipeline/job/{job_id}/kanban",
+    "POST /api/v1/karen/chat",
+    "GET /api/v1/karen/memory",
+    "POST /api/v1/referrals",
+    "GET /api/v1/salary"
+  ]
 }

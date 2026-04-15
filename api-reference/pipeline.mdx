@@ -1,0 +1,247 @@
+---
+title: "Pipeline API — move candidates through hiring stages"
+description: "Move applications between hiring stages, view a kanban board by job, retrieve full stage history, and benchmark candidates for each interview round."
+---
+
+The Pipeline API gives recruiters control over the hiring funnel. Move individual candidates between stages, view all applications for a job grouped by stage, inspect the full audit trail for any application, and get per-round benchmarks to understand what a candidate needs to progress.
+
+When a candidate is moved to a new stage, they are automatically notified in-app.
+
+---
+
+## Pipeline stages
+
+| Stage | Description |
+|-------|-------------|
+| `applied` | Application submitted, awaiting screening |
+| `ats_screening` | Resume being evaluated by the ATS engine |
+| `ats_rejected` | Did not meet ATS threshold |
+| `round_1` | First interview round |
+| `round_2` | Second interview round |
+| `round_3` | Third interview round |
+| `hr_round` | Final HR interview |
+| `offer` | Offer extended to candidate |
+| `selected` | Candidate hired |
+| `withdrawn` | Candidate withdrew application |
+
+---
+
+## POST /api/v1/pipeline/move
+
+Move an application to a new pipeline stage. The candidate is notified automatically.
+
+**Auth required:** Yes — recruiter or admin role required
+
+<ParamField body="application_id" type="string" required>
+  The ID of the application to move.
+</ParamField>
+
+<ParamField body="to_stage" type="string" required>
+  The destination stage. Must be a valid `PipelineStage` value (see table above).
+</ParamField>
+
+<ParamField body="notes" type="string">
+  Optional notes for this stage transition. Visible to the candidate in their history.
+</ParamField>
+
+### Response
+
+<ResponseField name="stage" type="string">
+  The application's new current stage.
+</ResponseField>
+
+<ResponseField name="highest" type="string">
+  The furthest stage this application has reached.
+</ResponseField>
+
+<CodeGroup>
+```bash Request
+curl -X POST http://localhost:8000/api/v1/pipeline/move \
+  -H "Authorization: Bearer <your_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "application_id": "f7a1b2c3-d4e5-6789-fabc-345678901234",
+    "to_stage": "round_1",
+    "notes": "Strong technical background. Scheduling first round interview."
+  }'
+```
+
+```json Response
+{
+  "stage": "round_1",
+  "highest": "round_1"
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `401` | Not authenticated |
+| `403` | User is not a recruiter or admin |
+| `404` | Application not found |
+
+---
+
+## GET /api/v1/pipeline/job/{job_id}/kanban
+
+Returns all applications for a job grouped by their current pipeline stage. Use this to render a kanban board.
+
+**Auth required:** Yes
+
+<Note>
+  This endpoint does not enforce recruiter-only access at the route level. Consider restricting kanban data to recruiter views in your frontend.
+</Note>
+
+<ParamField path="job_id" type="string" required>
+  The job ID.
+</ParamField>
+
+### Response
+
+Returns an object where each key is a pipeline stage name and the value is an array of applications at that stage.
+
+<CodeGroup>
+```bash Request
+curl http://localhost:8000/api/v1/pipeline/job/c4d5e6f7-a1b2-3456-cdef-012345678901/kanban \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+{
+  "applied": [
+    {
+      "application_id": "f7a1b2c3-d4e5-6789-fabc-345678901234",
+      "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "full_name": "Alex Rivera",
+      "match_score": 84.2,
+      "ats_passed": null
+    }
+  ],
+  "round_1": [],
+  "round_2": [],
+  "offer": []
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `401` | Not authenticated |
+| `404` | Job not found |
+
+---
+
+## GET /api/v1/pipeline/application/{app_id}/history
+
+Returns the full stage transition history for an application. Each entry shows when the application moved between stages and any recruiter notes attached to the move.
+
+**Auth required:** Yes
+
+<ParamField path="app_id" type="string" required>
+  The application ID.
+</ParamField>
+
+### Response
+
+Returns an array of transition records ordered chronologically.
+
+<ResponseField name="from" type="string">
+  The stage the application moved from.
+</ResponseField>
+
+<ResponseField name="to" type="string">
+  The stage the application moved to.
+</ResponseField>
+
+<ResponseField name="notes" type="string">
+  Recruiter notes attached to this transition (if any).
+</ResponseField>
+
+<ResponseField name="moved_at" type="string (ISO 8601)">
+  Timestamp of the transition.
+</ResponseField>
+
+<CodeGroup>
+```bash Request
+curl http://localhost:8000/api/v1/pipeline/application/f7a1b2c3-d4e5-6789-fabc-345678901234/history \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+[
+  {
+    "from": "applied",
+    "to": "ats_screening",
+    "notes": null,
+    "moved_at": "2026-04-10T09:15:00"
+  },
+  {
+    "from": "ats_screening",
+    "to": "round_1",
+    "notes": "Strong technical background. Scheduling first round interview.",
+    "moved_at": "2026-04-12T14:30:00"
+  }
+]
+```
+</CodeGroup>
+
+---
+
+## GET /api/v1/pipeline/{resume_id}/round-benchmark
+
+Returns per-round benchmark data for a resume against a given job title. Answers: "What does this candidate need to clear Round 1? What to be selected?"
+
+**Auth required:** Yes
+
+<ParamField path="resume_id" type="string" required>
+  The resume ID to benchmark.
+</ParamField>
+
+<ParamField query="job_title" type="string" required>
+  The job title to benchmark against (e.g. `"Senior Backend Engineer"`).
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl "http://localhost:8000/api/v1/pipeline/b3f1a2c4-d5e6-7890-bcde-f01234567890/round-benchmark?job_title=Senior+Backend+Engineer" \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+{
+  "job_title": "Senior Backend Engineer",
+  "rounds": {
+    "round_1": {
+      "required_score": 65,
+      "current_score": 72,
+      "status": "likely_to_pass",
+      "gaps": []
+    },
+    "round_2": {
+      "required_score": 78,
+      "current_score": 72,
+      "status": "needs_improvement",
+      "gaps": ["System Design", "Distributed Systems"]
+    },
+    "selected": {
+      "required_score": 88,
+      "current_score": 72,
+      "status": "significant_gap",
+      "gaps": ["Leadership", "System Design", "Architecture"]
+    }
+  }
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `400` | `job_title` query param is missing |
+| `401` | Not authenticated |
+| `404` | Resume not found |

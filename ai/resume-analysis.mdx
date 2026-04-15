@@ -1,0 +1,107 @@
+---
+title: "AI resume parsing and structured data extraction"
+description: "How HireFlow converts uploaded PDF and DOCX resumes into structured JSON, embeddings, and section-level chunks for search and scoring."
+---
+
+When you upload a resume, HireFlow runs it through a multi-stage AI pipeline before any recruiter sees it. The pipeline extracts structured data, scores the resume for ATS compatibility, and stores vector embeddings that power job matching and benchmarking. All of this happens synchronously on upload in development, or via a Celery worker in production.
+
+## The ingestion pipeline
+
+`ResumePipeline.run()` is the single entry point that orchestrates every stage. It is called immediately after a successful upload to `POST /api/v1/resume/upload`.
+
+<Steps>
+  <Step title="File download">
+    The uploaded file is fetched from storage (local filesystem in dev, S3 in prod) to a local path.
+  </Step>
+  <Step title="Text extraction">
+    `ResumeIngester.ingest()` converts the file to clean plain text.
+
+    - **PDF** — extracted with PyMuPDF (`fitz`). Bold spans shorter than 60 characters are promoted to section headers (`## Header`) so the chunker can detect section boundaries.
+    - **DOCX / DOC** — extracted with python-docx. Bold runs and `Heading` styles are similarly promoted to `## Header` markers.
+    - **TXT** — read directly as UTF-8.
+
+    After extraction, the text is cleaned: multiple spaces are collapsed, triple newlines are reduced to double, and form-feed and null bytes are stripped.
+  </Step>
+  <Step title="Structured parsing">
+    The cleaned text (up to 6 000 characters) is sent to `gpt-4o-mini` with a prompt that returns a JSON object. The parser uses `response_format: json_object` and `temperature: 0` for deterministic output.
+
+    ```json
+    {
+      "name": "Jane Smith",
+      "email": "jane@example.com",
+      "phone": "+91 98765 43210",
+      "location": "Bengaluru, IN",
+      "total_experience_years": 4.5,
+      "current_title": "Software Engineer",
+      "skills": ["Python", "FastAPI", "PostgreSQL"],
+      "soft_skills": ["Communication", "Leadership"],
+      "education": [
+        { "degree": "B.Tech CSE", "institution": "IIT Delhi", "year": 2020 }
+      ],
+      "experience": [
+        {
+          "title": "Software Engineer",
+          "company": "Acme Corp",
+          "duration_months": 30,
+          "description": "..."
+        }
+      ],
+      "certifications": ["AWS Solutions Architect"],
+      "languages": ["English", "Hindi"]
+    }
+    ```
+
+    The result is stored in `Resume.parsed_data` (JSON column).
+  </Step>
+  <Step title="ATS scoring">
+    The parsed data and raw text are passed to `ATSScorer.score()`. The resulting score (0–100) and full report are written to `Resume.ats_score` and `Resume.ats_report`. See [ATS scoring](/ai/ats-scoring) for a breakdown of how the score is calculated.
+  </Step>
+  <Step title="Chunking">
+    `ResumeChunker.chunk()` splits the raw text on the `## Header` markers inserted during ingestion. Each section is classified into a canonical label (`experience`, `education`, `skills`, `projects`, `certifications`, `summary`, `achievements`, `research`, or `other`). Sections longer than 900 characters are split further on line boundaries to stay under approximately 300 tokens per chunk.
+
+    Each chunk carries a `section` label, the text content, and an index.
+  </Step>
+  <Step title="Embedding generation">
+    `ResumeEmbedder` calls OpenAI `text-embedding-3-small` (1 536 dimensions) to embed each chunk in batches of 20. Old chunks for the resume are deleted, then the new `ResumeChunk` rows are inserted with their embeddings.
+
+    A separate whole-resume embedding is computed from the first 4 000 characters of the raw text and stored in `Resume.embedding`. This is used for fast candidate-level similarity without chunk retrieval.
+  </Step>
+</Steps>
+
+## What gets stored
+
+| Model | Key fields |
+|-------|-----------|
+| `Resume` | `raw_text`, `parsed_data` (JSON), `ats_score`, `ats_report` (JSON), `embedding` (vector) |
+| `ResumeChunk` | `resume_id`, `section`, `content`, `embedding` (vector), `chunk_index` |
+
+The `ResumeChunk` table enables hybrid search: keyword queries can filter by `section`, while embedding similarity powers semantic retrieval over specific parts of the resume.
+
+## Supported file types
+
+<CardGroup cols={3}>
+  <Card title="PDF" icon="file-pdf">
+    Extracted with PyMuPDF. Section headers are inferred from bold formatting and font size.
+  </Card>
+  <Card title="DOCX / DOC" icon="file-word">
+    Extracted with python-docx. Heading styles and bold paragraphs become section markers.
+  </Card>
+  <Card title="TXT" icon="file-lines">
+    Read directly as UTF-8. No section detection — the whole document becomes a single chunk labeled `other`.
+  </Card>
+</CardGroup>
+
+<Note>
+  The pipeline truncates input to GPT-4o-mini at 6 000 characters for parsing and 4 000 characters for the whole-resume embedding. Very long resumes are not silently truncated at upload — only the AI calls cap input length. Full raw text is always stored.
+</Note>
+
+## Vector storage backends
+
+HireFlow supports two vector backends, selected via `VECTOR_BACKEND` in your environment:
+
+| Backend | When to use | Notes |
+|---------|-------------|-------|
+| `pgvector` (default) | Development, small deployments | Embeddings stored directly in Postgres using the `<=>` cosine distance operator |
+| `pinecone` | Production, large scale | Set `PINECONE_API_KEY`, `PINECONE_ENV`, and `PINECONE_INDEX` in `.env` |
+
+See [Production configuration](/deployment/configuration) for details on switching backends.

@@ -1,0 +1,149 @@
+---
+title: "Understanding your ATS score in HireFlow"
+description: "What your HireFlow ATS score means, how it's calculated across five components, how to read the report, and what you can do to improve it."
+---
+
+ATS stands for Applicant Tracking System — the automated software most companies use to filter resumes before a recruiter ever sees them. HireFlow scores your resume against ATS criteria and gives you a transparent report so you know exactly what to fix.
+
+## What the ATS score measures
+
+Your ATS score is a float from **0–100**. It combines five weighted components, each measuring a different aspect of how well your resume will perform in automated screening.
+
+| Component | Max points | What it checks |
+|---|---|---|
+| Keywords | 35 | Presence of relevant industry and role-specific terms |
+| Sections | 25 | Required resume sections (experience, education, skills, etc.) |
+| Format | 20 | Absence of tables, columns, graphics, and non-parseable layouts |
+| Length | 10 | Word count in the optimal 400–900 word range |
+| Clarity | 10 | Sentence structure, action verbs, and overall readability |
+
+The five components sum to a maximum of 100. HireFlow also assigns a letter grade:
+
+| Score | Grade |
+|---|---|
+| 90–100 | A |
+| 75–89 | B |
+| 60–74 | C |
+| 45–59 | D |
+| 0–44 | F |
+
+## Fetching your ATS score
+
+Retrieve your current ATS score and full report from your active resume:
+
+```bash
+curl http://localhost:8000/api/v1/resume/me \
+  -H "Authorization: Bearer <token>"
+```
+
+Or fetch the report for a specific resume by ID:
+
+```bash
+curl http://localhost:8000/api/v1/resume/{resume_id}/ats \
+  -H "Authorization: Bearer <token>"
+```
+
+A typical response looks like this:
+
+```json
+{
+  "score": 68.0,
+  "report": {
+    "grade": "C",
+    "breakdown": {
+      "sections": 20,
+      "keywords": 22,
+      "format": 16,
+      "length": 7,
+      "clarity": 8
+    },
+    "issues": [
+      "Multi-column layout detected — may not parse correctly"
+    ],
+    "warnings": [
+      "Missing certifications section",
+      "Low keyword density for target role"
+    ],
+    "missing_sections": ["certifications"],
+    "keyword_match": {
+      "matched": ["Python", "REST API", "PostgreSQL"],
+      "missing": ["Docker", "Kubernetes", "CI/CD"],
+      "score": 22,
+      "coverage": 0.43
+    },
+    "format_issues": [
+      { "message": "Multi-column layout detected", "severity": "high" }
+    ],
+    "improvement_tips": [
+      "Include these keywords from the JD: Docker, Kubernetes, CI/CD",
+      "Remove tables and multi-column layouts — use single-column format",
+      "Add missing sections: certifications"
+    ]
+  }
+}
+```
+
+## Reading the report
+
+### `breakdown`
+
+Shows the raw score for each component. Use this to identify where you're losing the most points. A `keywords` score below 25 is the most common cause of a low overall score.
+
+### `issues`
+
+High-severity problems that directly harm ATS parsing — such as tables, multi-column layouts, or graphics. These are the most important to fix.
+
+### `warnings`
+
+Medium- and low-severity observations, such as missing optional sections or slightly low keyword density. Address these after resolving `issues`.
+
+### `missing_sections`
+
+Sections that were not detected in your resume. Common required sections are: work experience, education, skills, and contact information. Optional but beneficial sections include certifications, projects, and summary.
+
+### `keyword_match`
+
+When a job description is available (Premium), `matched` lists keywords found in both your resume and the JD, while `missing` lists JD keywords absent from your resume. `coverage` is the fraction of JD keywords matched (0.0–1.0).
+
+### `improvement_tips`
+
+A prioritized list of up to five actions you can take to raise your score. These are generated from your actual breakdown data — not generic advice.
+
+## ATS screening and your pipeline
+
+When you apply to a job, HireFlow runs ATS screening as the first automated gate:
+
+- If your resume **passes** the ATS check, your application moves to `ATS_SCREENING` and then progresses to interview rounds.
+- If your resume **fails**, your application moves to `ATS_REJECTED`. You can re-apply after uploading an improved resume.
+
+<Info>
+  The `ats_passed` field on your application record reflects whether you cleared this gate. You can see this in your application status.
+</Info>
+
+## Tips to improve your ATS score
+
+<AccordionGroup>
+  <Accordion title="Use a single-column layout">
+    Multi-column resumes, tables, and text boxes confuse ATS parsers. Use a simple, linear layout with clear section headers. This is the single highest-impact change for a low format score.
+  </Accordion>
+
+  <Accordion title="Include industry-specific keywords">
+    Review the job descriptions you're targeting and add the technical terms, tools, and skills that appear frequently. Don't stuff keywords — use them naturally within your experience descriptions. Premium users can run a JD-specific ATS score to see exactly which keywords are missing.
+  </Accordion>
+
+  <Accordion title="Add all standard resume sections">
+    Make sure your resume has clearly labeled sections for: Work Experience, Education, and Skills at minimum. Missing sections directly reduce your sections score.
+  </Accordion>
+
+  <Accordion title="Aim for 400–900 words">
+    Too short suggests thin experience; too long suggests poor editing. Expand bullet points with quantified achievements (e.g., "reduced API latency by 40%") to hit the optimal range.
+  </Accordion>
+
+  <Accordion title="Use strong action verbs">
+    Start each bullet point with a verb: built, designed, optimized, led, reduced, increased. This improves your clarity score and makes the resume easier for both ATS and humans to parse.
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+  After making changes, upload your revised resume to run a fresh ATS analysis. Uploading a new file automatically deactivates the previous one, so your score will always reflect your latest version.
+</Tip>

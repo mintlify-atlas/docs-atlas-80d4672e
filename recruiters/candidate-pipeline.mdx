@@ -1,0 +1,173 @@
+---
+title: "Manage candidates through the hiring pipeline"
+description: "Track every applicant across pipeline stages, move them with a full audit trail, and let HireFlow notify candidates automatically at each transition."
+---
+
+HireFlow's pipeline gives you a structured way to move candidates from initial application through to a hiring decision. Every stage transition is logged in an immutable audit trail, and candidates receive automatic notifications whenever their status changes.
+
+## Pipeline stages
+
+Candidates move through the following stages in order. Terminal stages (`ATS_REJECTED` and `WITHDRAWN`) end the journey — a candidate in either of those states cannot be moved forward.
+
+| Stage           | Value            | Description                                               |
+| --------------- | ---------------- | --------------------------------------------------------- |
+| Applied         | `applied`        | Candidate has submitted their application.                |
+| ATS Screening   | `ats_screening`  | Application is being reviewed by the ATS scoring engine.  |
+| ATS Rejected    | `ats_rejected`   | Did not meet the ATS threshold. Terminal stage.           |
+| Round 1         | `round_1`        | First interview round.                                    |
+| Round 2         | `round_2`        | Second interview round.                                   |
+| Round 3         | `round_3`        | Third interview round (if applicable).                    |
+| HR Round        | `hr_round`       | HR / culture-fit interview.                               |
+| Offer           | `offer`          | Offer extended to the candidate.                          |
+| Selected        | `selected`       | Candidate has accepted and been formally selected.        |
+| Withdrawn       | `withdrawn`      | Candidate withdrew their application. Terminal stage.     |
+
+<Note>
+  `ATS_REJECTED` and `WITHDRAWN` are terminal stages. Once a candidate reaches either, they cannot be moved to any other stage.
+</Note>
+
+## View the kanban board
+
+Get all applications for a job grouped by their current pipeline stage:
+
+```bash
+curl -X GET http://localhost:8000/api/v1/pipeline/job/<job_id>/kanban
+```
+
+```json
+{
+  "applied": [
+    {
+      "application_id": "a1b2c3d4-...",
+      "user_id": "u5f6g7h8-...",
+      "match_score": 0.87,
+      "benchmark_score": 0.74,
+      "applied_at": "2026-04-14T08:22:00",
+      "is_referred": false
+    }
+  ],
+  "ats_screening": [],
+  "round_1": [],
+  "selected": [],
+  "insider_referred": []
+}
+```
+
+The response includes one key per pipeline stage value, plus an `insider_referred` list that aggregates any candidates who applied through a referral. Each entry includes:
+
+- **`match_score`** — AI semantic similarity score between the candidate's resume and the job description.
+- **`benchmark_score`** — How the candidate compares against previously selected candidates for similar roles.
+- **`is_referred`** — Whether the application carries an insider referral boost.
+
+## Move a candidate
+
+Advance or change a candidate's stage by providing their `application_id`, the target stage, and an optional note:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/pipeline/move \
+  -H "Authorization: Bearer <your_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "application_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "to_stage": "round_1",
+    "notes": "Strong system design fundamentals. Invite to technical screen."
+  }'
+```
+
+```json
+{
+  "stage": "round_1",
+  "highest": "round_1"
+}
+```
+
+The response returns the candidate's `stage` (current) and `highest` (the furthest stage they have reached, even if they were later moved back).
+
+<Tip>
+  Use the `notes` field to leave context for your teammates — it is stored in the stage history and visible in the application history endpoint.
+</Tip>
+
+## Candidate notifications
+
+Every time you call `POST /api/v1/pipeline/move`, HireFlow automatically dispatches a notification to the candidate. Notifications are sent asynchronously via a background task and include the new stage and any notes you provided.
+
+<Info>
+  Notifications are delivered in-app via `InAppNotification` records and, where configured, via email through the background task queue. Candidates always have a record of every stage change in their account.
+</Info>
+
+## View application history
+
+Retrieve the complete audit trail for a single application — every stage move in chronological order:
+
+```bash
+curl -X GET http://localhost:8000/api/v1/pipeline/application/<app_id>/history
+```
+
+```json
+[
+  {
+    "from": "applied",
+    "to": "ats_screening",
+    "notes": null,
+    "moved_at": "2026-04-14T09:00:00"
+  },
+  {
+    "from": "ats_screening",
+    "to": "round_1",
+    "notes": "Strong system design fundamentals. Invite to technical screen.",
+    "moved_at": "2026-04-15T11:30:00"
+  }
+]
+```
+
+Each history entry captures:
+
+- `from` — the stage the candidate was in before the move.
+- `to` — the stage they were moved to.
+- `notes` — any context the recruiter recorded.
+- `moved_at` — UTC timestamp of the move.
+
+<Note>
+  The `moved_by` field (the recruiter's `user_id`) is stored in the `StageHistory` database record for internal audit purposes but is not returned in the history API response.
+</Note>
+
+## Understanding match and benchmark scores
+
+Two scores appear on every application:
+
+<AccordionGroup>
+  <Accordion title="match_score">
+    A semantic similarity score (0–1) between the candidate's resume embedding and the job embedding. Computed at application time by the AI matching engine. Higher means a stronger overall fit for the role. See [AI candidate matching](/ai/candidate-matching) for details.
+  </Accordion>
+  <Accordion title="benchmark_score">
+    Compares the candidate against previously selected candidates for similar roles using the selected pool. A high benchmark score means the candidate's profile resembles people who were historically hired for comparable positions. See [AI benchmarking](/ai/benchmarking) for details.
+  </Accordion>
+</AccordionGroup>
+
+## Stage history data model
+
+Internally, every call to `POST /api/v1/pipeline/move` creates a `StageHistory` record:
+
+```
+StageHistory
+├── id             (UUID)
+├── application_id → applications.id
+├── from_stage     (PipelineStage enum)
+├── to_stage       (PipelineStage enum)
+├── moved_by       → users.id  (the recruiter who made the move)
+├── notes          (text, optional)
+└── created_at     (timestamp)
+```
+
+This gives you a complete, tamper-evident log of every decision made on every application.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="AI benchmarking" icon="chart-bar" href="/ai/benchmarking">
+    Learn how benchmark scores are computed using the selected candidate pool.
+  </Card>
+  <Card title="Job postings" icon="briefcase" href="/recruiters/job-posting">
+    Manage the job lifecycle and pull AI-ranked candidate lists.
+  </Card>
+</CardGroup>

@@ -1,0 +1,158 @@
+---
+title: "Benchmark your resume against top candidates"
+description: "How HireFlow compares your resume embedding against candidates who cleared specific rounds or were selected, surfacing skill gaps and a percentile ranking."
+---
+
+Benchmarking tells you where you stand relative to candidates who actually made it through the hiring process for a given role. Instead of generic advice, HireFlow compares your resume's embedding against real selected candidates and round clearers, then surfaces specific skills you're missing and a percentile score.
+
+## How benchmarking works
+
+HireFlow maintains two pools of past candidate data:
+
+- **`SelectedPoolEntry`** — resumes of candidates who reached `PipelineStage.SELECTED` for a job. Each entry stores the resume ID, job ID, job title, and the resume's embedding vector.
+- **`RoundClearerEntry`** — resumes of candidates who cleared a specific round (`round_1`, `round_2`, `round_3`, `hr_round`). Each entry stores the round name in addition to the job title and embedding.
+
+Both tables are populated automatically when a recruiter moves an application to the corresponding stage in the pipeline.
+
+When you request a benchmark, your resume's embedding is compared against the embeddings of candidates in the relevant pool using cosine similarity.
+
+## Overall benchmark: `BenchmarkComparator`
+
+`BenchmarkComparator.compare()` compares your resume against the full selected pool for a job title.
+
+### What it returns
+
+```json
+{
+  "percentile": 67.0,
+  "similarity_score": 73.4,
+  "pool_size": 42,
+  "skill_gaps": ["kubernetes", "system design", "go"],
+  "strength_skills": ["python", "sql", "fastapi"],
+  "improvement_pts": 9.9
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `percentile` | What percentage of the selected pool your resume scores above |
+| `similarity_score` | Your average cosine similarity to all selected candidates (scaled 0–100) |
+| `pool_size` | Number of selected candidates used for comparison |
+| `skill_gaps` | Skills present in 40%+ of selected resumes that are missing from yours (up to 10) |
+| `strength_skills` | Skills you share with the selected pool (up to 5) |
+| `improvement_pts` | Estimated points you could gain: `(100 - percentile) × 0.3` |
+
+### How the percentile is calculated
+
+1. Your embedding is compared to every selected candidate's embedding using cosine similarity. Your average similarity is `candidate_score`.
+2. For each selected candidate, their average similarity to the rest of the pool is computed.
+3. Your percentile is the fraction of the pool's self-similarity scores that your `candidate_score` beats, multiplied by 100.
+
+A percentile of 67 means your resume is more similar to the selected pool than 67% of the selected candidates were to each other — you're in the top third.
+
+### Skill gap analysis
+
+The skill gap is computed by:
+1. Collecting all skills from the selected pool's resume records.
+2. Keeping skills that appear in at least 40% of those resumes (the "common pool skills").
+3. Returning skills in that set that are absent from your `parsed_data.skills`.
+
+Up to 10 missing skills and 5 shared strengths are returned.
+
+### API endpoint
+
+```http
+GET /api/v1/resume/{resume_id}/benchmark?job_title=Backend+Engineer
+Authorization: Bearer <token>
+```
+
+If no benchmark data exists for the role yet, the response includes:
+
+```json
+{
+  "percentile": null,
+  "pool_size": 0,
+  "message": "No benchmark data yet for this role",
+  "similarity_score": null
+}
+```
+
+## Per-round benchmark: `RoundComparator`
+
+`RoundComparator.compare()` gives round-by-round advice. For each stage (`round_1` through `selected`), it shows how similar your resume is to candidates who cleared that round and what skills you need to add.
+
+### What it returns
+
+```json
+{
+  "job_title": "Backend Engineer",
+  "resume_id": "abc-123",
+  "quick_summary": "Main blocker: Round 2 — add system design, go",
+  "rounds": {
+    "round_1": {
+      "pool_size": 38,
+      "similarity": 81.0,
+      "skill_gaps": [],
+      "strength_skills": ["python", "sql"],
+      "message": "Strong match for Round 1 — you're competitive"
+    },
+    "round_2": {
+      "pool_size": 22,
+      "similarity": 44.0,
+      "skill_gaps": ["system design", "go", "kubernetes"],
+      "strength_skills": ["python"],
+      "message": "Significant gap for Round 2 — prioritize: system design, go, kubernetes"
+    },
+    "selected": {
+      "pool_size": 11,
+      "similarity": 39.0,
+      "skill_gaps": ["system design", "go", "kubernetes", "leadership"],
+      "strength_skills": ["python"],
+      "message": "Significant gap for Selected — prioritize: system design, go, kubernetes, leadership"
+    }
+  }
+}
+```
+
+The `quick_summary` field identifies the first round where your similarity drops below 50% and names the top 3 skill gaps for that round — giving you a single actionable focus.
+
+The `message` field for each round uses three tiers:
+- **≥ 75% similarity** → "Strong match — you're competitive"
+- **50–74%** → "To clear [Round] — focus on: [top 3 gaps]"
+- **< 50%** → "Significant gap — prioritize: [top 5 gaps]"
+
+### API endpoint
+
+```http
+GET /api/v1/pipeline/{resume_id}/round-benchmark?job_title=Backend+Engineer
+Authorization: Bearer <token>
+```
+
+<Accordion title="What if a round has no data?">
+  If no candidates have been recorded as clearing a specific round for that job title, the round entry returns:
+
+  ```json
+  {
+    "pool_size": 0,
+    "similarity": null,
+    "skill_gaps": [],
+    "message": "No benchmark data yet for this round"
+  }
+  ```
+
+  Benchmark pools grow over time as recruiters move candidates through the pipeline. Newer job postings may have sparse data for later rounds.
+</Accordion>
+
+## Data freshness
+
+Benchmark pools are updated in real time as recruiters advance candidates. `SelectedPoolEntry` rows are inserted by `selected_pool_index.add_to_pool()` when an application transitions to `SELECTED`. `RoundClearerEntry` rows are inserted when an application moves to any round stage.
+
+<Note>
+  Benchmark data is scoped to job title using a case-insensitive `ILIKE` match (e.g. searching for "Backend Engineer" also matches "Senior Backend Engineer"). This broadens the comparison pool for roles with low application volume.
+</Note>
+
+## Related pages
+
+- [Resume analysis](/ai/resume-analysis) — how your resume embedding is generated
+- [Candidate matching](/ai/candidate-matching) — using embeddings for job-resume similarity
+- [Candidate pipeline](/recruiters/candidate-pipeline) — how selected pool entries are created

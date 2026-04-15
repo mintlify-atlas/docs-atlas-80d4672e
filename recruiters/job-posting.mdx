@@ -1,0 +1,201 @@
+---
+title: "Create and manage job postings on HireFlow"
+description: "Post jobs, navigate the approval workflow, pull AI-ranked candidate lists, and close positions — covering the full job lifecycle on HireFlow."
+---
+
+Every job on HireFlow moves through a defined lifecycle before candidates can apply. Understanding that lifecycle helps you get postings live quickly and avoid common delays.
+
+## Job lifecycle
+
+A job always starts in `DRAFT` and must reach `LIVE` before candidates can see or apply to it.
+
+```
+DRAFT → PENDING_APPROVAL → LIVE → CLOSED
+                        ↘ REJECTED
+```
+
+| Status             | What it means                                                              |
+| ------------------ | -------------------------------------------------------------------------- |
+| `DRAFT`            | Created but not yet submitted for review.                                   |
+| `PENDING_APPROVAL` | Submitted for finance/admin review; not yet visible to candidates.          |
+| `LIVE`             | Approved and visible to candidates. Applications are open.                  |
+| `CLOSED`           | Position filled or cancelled. No new applications accepted.                 |
+| `REJECTED`         | Declined during review. A rejection reason is recorded on the job.         |
+
+<Warning>
+  Jobs are **not** visible to candidates until the status is `LIVE`. A newly created job is immediately set to `PENDING_APPROVAL` and remains hidden until an admin or authorized recruiter approves it.
+</Warning>
+
+## Job fields
+
+When creating a job, you provide the following fields:
+
+| Field          | Type             | Required | Description                                                              |
+| -------------- | ---------------- | -------- | ------------------------------------------------------------------------ |
+| `title`        | string           | Yes      | Job title shown on listings.                                             |
+| `description`  | string           | Yes      | Full job description.                                                    |
+| `requirements` | array of strings | No       | List of requirements (skills, qualifications, etc.).                     |
+| `job_type`     | enum             | Yes      | One of `fulltime`, `parttime`, `contract`, `internship`, `remote`.       |
+| `location`     | string           | Yes      | Office location or city.                                                 |
+| `remote_ok`    | boolean          | No       | Whether remote candidates are accepted. Defaults to `false`.             |
+| `salary_min`   | integer          | No       | Minimum salary in your currency.                                         |
+| `salary_max`   | integer          | No       | Maximum salary in your currency.                                         |
+| `headcount`    | integer          | No       | Number of open seats for this role.                                      |
+
+## Create a job
+
+Submit a new job posting. It is immediately placed into `PENDING_APPROVAL`:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/jobs \
+  -H "Authorization: Bearer <your_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Senior Backend Engineer",
+    "description": "Build and scale our core API infrastructure.",
+    "requirements": ["Python", "FastAPI", "PostgreSQL", "5+ years experience"],
+    "job_type": "fulltime",
+    "location": "San Francisco, CA",
+    "remote_ok": true,
+    "salary_min": 140000,
+    "salary_max": 180000
+  }'
+```
+
+```json
+{
+  "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  "title": "Senior Backend Engineer",
+  "job_type": "fulltime",
+  "location": "San Francisco, CA",
+  "remote_ok": true,
+  "salary_min": 140000,
+  "salary_max": 180000,
+  "is_active": false,
+  "company_name": "Acme Corp"
+}
+```
+
+## Update a job
+
+You can update a job's title, description, requirements, or salary range while it is still in review or after it goes live:
+
+```bash
+curl -X PATCH http://localhost:8000/api/v1/jobs/<job_id> \
+  -H "Authorization: Bearer <your_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "salary_min": 150000,
+    "salary_max": 190000,
+    "requirements": ["Python", "FastAPI", "PostgreSQL", "Kubernetes", "5+ years experience"]
+  }'
+```
+
+## Approve a job
+
+Once a job is in `PENDING_APPROVAL`, an authorized recruiter or admin approves it to make it `LIVE`:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/jobs/<job_id>/approve \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json
+{
+  "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  "title": "Senior Backend Engineer",
+  "status": "live",
+  "approved_at": "2026-04-15T10:30:00",
+  "message": "Job 'Senior Backend Engineer' is now LIVE — candidates can apply"
+}
+```
+
+<Tip>
+  Approving a job also triggers job alerts for candidates whose preferences match the role. Candidates with matching job type and location preferences are notified automatically.
+</Tip>
+
+## Reject a job
+
+If budget is not confirmed or the posting needs rework, reject it with an optional reason:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/jobs/<job_id>/reject \
+  -H "Authorization: Bearer <your_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "Headcount not confirmed for Q2"}'
+```
+
+The rejection reason is stored on the job record and can be reviewed by the recruiter who created the posting.
+
+## View jobs pending approval
+
+List all jobs currently waiting for review:
+
+```bash
+curl -X GET http://localhost:8000/api/v1/jobs/pending \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json
+[
+  {
+    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "title": "Senior Backend Engineer",
+    "status": "pending_approval",
+    "created_at": "2026-04-15T09:00:00"
+  }
+]
+```
+
+## Get AI-ranked candidates
+
+Once a job is live and applications are coming in, fetch a ranked list of candidates ordered by semantic match score:
+
+```bash
+curl -X GET "http://localhost:8000/api/v1/jobs/<job_id>/candidates?limit=20" \
+  -H "Authorization: Bearer <your_token>"
+```
+
+HireFlow's `JobMatcher` computes a semantic similarity score between each candidate's resume embedding and the job embedding. The result list is ordered highest-score first, so the best-fit candidates appear at the top.
+
+<Info>
+  The `match_score` on each result reflects how closely a candidate's resume aligns with the job description and requirements semantically — not just keyword overlap. See [AI candidate matching](/ai/candidate-matching) for a deeper explanation.
+</Info>
+
+## Close a job
+
+When the position is filled or you want to stop accepting applications:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/jobs/<job_id>/close \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json
+{
+  "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  "status": "closed"
+}
+```
+
+## Delete a job
+
+To permanently remove a job posting (typically only used for drafts or test records):
+
+```bash
+curl -X DELETE http://localhost:8000/api/v1/jobs/<job_id> \
+  -H "Authorization: Bearer <your_token>"
+```
+
+This returns `204 No Content` on success.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Candidate pipeline" icon="users" href="/recruiters/candidate-pipeline">
+    Move applicants through interview stages with a full audit trail.
+  </Card>
+  <Card title="AI candidate matching" icon="sparkles" href="/ai/candidate-matching">
+    Understand how match scores are calculated for your job postings.
+  </Card>
+</CardGroup>

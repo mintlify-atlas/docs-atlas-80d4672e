@@ -1,0 +1,37 @@
+---
+title: "HireFlow: AI-Powered Hiring Made Transparent"
+description: "HireFlow is an AI hiring portal that gives job seekers and recruiters full visibility into resume scoring, job matching, and pipeline decisions."
+---
+
+HireFlow replaces opaque hiring systems with an AI-powered platform where every decision is explained. Job seekers see exactly why their resume scored the way it did, which jobs match their profile, and where they stand in the hiring pipeline — in real time. Recruiters get AI-ranked candidates, a full kanban pipeline, and instant notifications without manual back-and-forth.
+
+## Who is HireFlow for?
+
+<CardGroup cols={2}>
+  <Card title="Job seekers" icon="user" href="/job-seekers/overview">
+    Upload your resume, get an ATS score with a breakdown, browse semantically matched jobs, and track every stage of your applications with full transparency.
+  </Card>
+  <Card title="Recruiters" icon="briefcase" href="/recruiters/overview">
+    Set up your company, post jobs, and let AI rank incoming candidates. Move applicants through a visual pipeline and keep them notified automatically.
+  </Card>
+  <Card title="API reference" icon="code" href="/api-reference/auth">
+    Integrate HireFlow into your own tools using the FastAPI-powered REST API. All endpoints are documented with request and response schemas.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Clone the repo, set three environment variables, and have the full stack running locally in minutes.
+  </Card>
+</CardGroup>
+
+## Key capabilities
+
+- **ATS scoring** — Every uploaded resume is parsed and scored against industry criteria, with a detailed breakdown of strengths and gaps so candidates know exactly what to improve.
+- **Semantic job matching** — Resume embeddings are compared against job embeddings using vector similarity, surfacing roles that genuinely match a candidate's background rather than keyword frequency.
+- **Full pipeline tracking** — Applications move through defined stages (applied → ATS screening → interviews → offer → selected) and both sides see every transition in real time.
+- **Karen AI assistant** — A conversational AI built on GPT-4o-mini that answers candidate questions, provides resume tips, and remembers context across sessions.
+- **Candidate benchmarking** — Candidates are scored relative to the selected pool for a role, giving recruiters a clear signal and giving job seekers honest positioning data.
+- **Resume optimizer** — Premium tier feature that rewrites resume sections to better match a target job description, powered by GPT-4o-mini.
+- **Referral network** — Job seekers can request referrals from insiders at companies they are applying to, with a structured flow that protects both parties.
+
+<Note>
+  HireFlow uses SQLite and local file storage by default in development. For production, switch to PostgreSQL with pgvector and AWS S3. See [deployment configuration](/deployment/configuration) for details.
+</Note>

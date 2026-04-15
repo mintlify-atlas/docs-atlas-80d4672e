@@ -1,0 +1,241 @@
+---
+title: "Authentication — register, login, get JWT token"
+description: "Create a HireFlow account or log in to receive a JWT bearer token. Pass the token in every subsequent request to access protected endpoints."
+---
+
+HireFlow uses JWT bearer tokens for authentication. Call `POST /auth/register` to create an account or `POST /auth/login` to authenticate with existing credentials. Both endpoints return an `access_token` that you must include in the `Authorization` header of every other API request.
+
+All tokens are role-aware — the payload encodes whether the user is a `jobseeker`, `recruiter`, or `admin`, and the API enforces role-based access automatically.
+
+## Passing the token
+
+Include the token as a bearer token in the `Authorization` header:
+
+```
+Authorization: Bearer <your_token>
+```
+
+If the token is missing, malformed, or expired, the API returns `401 Unauthorized`.
+
+---
+
+## POST /api/v1/auth/register
+
+Create a new user account. Returns a JWT token immediately — no separate login step needed.
+
+**Auth required:** No
+
+<ParamField body="email" type="string" required>
+  Valid email address. Must be unique across all accounts.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Minimum 8 characters.
+</ParamField>
+
+<ParamField body="full_name" type="string" required>
+  Display name. Minimum 2 characters.
+</ParamField>
+
+<ParamField body="role" type="string" default="jobseeker">
+  Account type. One of `jobseeker` or `recruiter`.
+</ParamField>
+
+<ParamField body="referral_code" type="string">
+  Optional referral code from a referring user. Tracked automatically on sign-up.
+</ParamField>
+
+### Response
+
+<ResponseField name="access_token" type="string">
+  JWT bearer token. Use this in subsequent requests.
+</ResponseField>
+
+<ResponseField name="token_type" type="string">
+  Always `"bearer"`.
+</ResponseField>
+
+<ResponseField name="user_id" type="string (UUID)">
+  The newly created user's ID.
+</ResponseField>
+
+<ResponseField name="role" type="string">
+  The user's role: `jobseeker`, `recruiter`, or `admin`.
+</ResponseField>
+
+<ResponseField name="tier" type="string">
+  Subscription tier: `free` or `premium`.
+</ResponseField>
+
+<CodeGroup>
+```bash Request
+curl -X POST http://localhost:8000/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "alex@example.com",
+    "password": "securepass123",
+    "full_name": "Alex Rivera",
+    "role": "jobseeker"
+  }'
+```
+
+```json Response
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "role": "jobseeker",
+  "tier": "free"
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `400` | Validation error (e.g. password too short, invalid email format) |
+| `409` | An account with this email already exists |
+
+---
+
+## POST /api/v1/auth/login
+
+Authenticate with email and password. Returns a fresh JWT token.
+
+**Auth required:** No
+
+<Note>
+  The login endpoint accepts `application/x-www-form-urlencoded` (OAuth2 password flow). Send `username` (your email) and `password` as form fields.
+</Note>
+
+<ParamField body="username" type="string" required>
+  Your account email address. (Field name is `username` per the OAuth2 spec.)
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Your account password.
+</ParamField>
+
+### Response
+
+Same shape as the register response: `access_token`, `token_type`, `user_id`, `role`, `tier`.
+
+<CodeGroup>
+```bash Request
+curl -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=alex@example.com&password=securepass123"
+```
+
+```json Response
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "role": "jobseeker",
+  "tier": "free"
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `401` | Invalid email or password |
+
+---
+
+## GET /api/v1/auth/me
+
+Returns the profile of the currently authenticated user.
+
+**Auth required:** Yes
+
+<CodeGroup>
+```bash Request
+curl http://localhost:8000/api/v1/auth/me \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "email": "alex@example.com",
+  "full_name": "Alex Rivera",
+  "role": "jobseeker",
+  "tier": "free",
+  "is_active": true
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `401` | Token is missing, invalid, or expired |
+| `404` | User associated with token not found |
+
+---
+
+## PATCH /api/v1/auth/onboarding
+
+Save job preferences after registration. Called once during the onboarding flow.
+
+**Auth required:** Yes
+
+<ParamField body="job_titles" type="string[]" default="[]">
+  List of job titles the user is interested in (e.g. `["Backend Engineer", "Staff Engineer"]`).
+</ParamField>
+
+<ParamField body="locations" type="string[]" default="[]">
+  Preferred work locations (e.g. `["San Francisco", "Remote"]`).
+</ParamField>
+
+<ParamField body="job_type" type="string">
+  Preferred employment type. One of `fulltime`, `parttime`, `contract`, `internship`, `remote`.
+</ParamField>
+
+### Response
+
+Returns the updated `UserOut` object (same shape as `GET /auth/me`).
+
+<CodeGroup>
+```bash Request
+curl -X PATCH http://localhost:8000/api/v1/auth/onboarding \
+  -H "Authorization: Bearer <your_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "job_titles": ["Backend Engineer", "Staff Engineer"],
+    "locations": ["San Francisco", "Remote"],
+    "job_type": "fulltime"
+  }'
+```
+
+```json Response
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "email": "alex@example.com",
+  "full_name": "Alex Rivera",
+  "role": "jobseeker",
+  "tier": "free",
+  "is_active": true
+}
+```
+</CodeGroup>
+
+---
+
+## Token errors
+
+All protected endpoints return one of these errors when authentication fails:
+
+| Status | Scenario |
+|--------|----------|
+| `401 Unauthorized` | Token is missing from the header, the signature is invalid, or the token has expired |
+| `403 Forbidden` | Token is valid but the user's role does not have permission for this endpoint |
+| `404 Not Found` | Token is valid but the associated user account no longer exists |
+
+Tokens do not include explicit expiry information in the response. If you receive a `401` on a previously working token, re-authenticate via `POST /auth/login` to obtain a new one.

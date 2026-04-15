@@ -1,0 +1,139 @@
+---
+title: "HireFlow system architecture overview"
+description: "How HireFlow's Next.js frontend, FastAPI backend, Celery workers, vector database, and OpenAI APIs fit together to power transparent hiring."
+---
+
+HireFlow is a full-stack application with a clear separation between the user-facing frontend, the REST API layer, asynchronous AI workers, and pluggable infrastructure backends for storage and vector search. This page explains how those layers connect and how data flows through the system when a candidate uploads a resume or a recruiter reviews applicants.
+
+## High-level topology
+
+```
+Next.js 14 (port 3000)
+       │  HTTP / REST
+       ▼
+FastAPI backend (port 8000)  ──── PostgreSQL / SQLite
+       │                              (SQLAlchemy ORM)
+       │  enqueue task
+       ▼
+Redis + Celery workers
+       │
+       ├── OpenAI API  (GPT-4o-mini + text-embedding-3-small)
+       ├── pgvector / Pinecone  (vector search)
+       └── Local filesystem / AWS S3  (file storage)
+```
+
+The backend is the single source of truth. The frontend communicates exclusively through the REST API at `/api/v1`. Long-running AI operations (resume parsing, embedding generation, ATS scoring) are dispatched to Celery workers so that API responses remain fast.
+
+## Key components
+
+| Component | Path | Responsibility |
+|---|---|---|
+| FastAPI app | `backend/main.py` | Bootstraps the app, registers CORS, mounts all routers |
+| API router | `backend/api/router.py` | Aggregates all route modules under `/api/v1` |
+| Configuration | `backend/config.py` | Typed settings via `pydantic-settings`, loaded from `.env` |
+| ORM models | `backend/models.py` | SQLAlchemy models for all database tables |
+| AI pipeline | `backend/ai/` | Modular AI sub-packages (see below) |
+| Celery workers | `backend/workers/` | Async task definitions and the Celery app instance |
+| Vector database | `backend/vector_db/` | Adapter layer supporting pgvector and Pinecone |
+| File storage | `backend/storage/` | Adapter layer supporting local disk and AWS S3 |
+| Next.js app | `frontend/app/` | Route groups for auth, job seeker portal, recruiter portal |
+
+## User roles
+
+HireFlow has two primary user roles, defined in `backend/models.py`:
+
+**JobSeeker** — registers, completes an onboarding form with job preferences, uploads resumes, browses and applies to jobs, and tracks pipeline stages. The job seeker portal lives under `frontend/app/(user)/`.
+
+**Recruiter** — registers with a company, creates or joins a company profile, posts jobs, views AI-ranked candidates, and moves applications through pipeline stages. The recruiter portal lives under `frontend/app/(company)/`.
+
+A third `ADMIN` role exists for internal moderation (approving job postings, managing users).
+
+## API layer (`backend/api/`)
+
+Each feature area has its own router module, all mounted by `backend/api/router.py`:
+
+| Module | Prefix area | What it handles |
+|---|---|---|
+| `auth/` | `/auth` | Registration, login, JWT token issuance |
+| `resume/` | `/resume` | Upload, ATS score retrieval, benchmark |
+| `jobs/` | `/jobs` | Job CRUD, AI ranking, Adzuna external jobs |
+| `applications/` | `/applications` | Apply to a job, view application history |
+| `pipeline/` | `/pipeline` | Move pipeline stages, kanban data |
+| `companies/` | `/companies` | Company creation and recruiter association |
+| `users/` | `/users` | User dashboard, profile, preferences |
+| `karen/` | `/karen` | Conversational AI assistant |
+| `referrals/` | `/referrals` | Referral code generation and tracking |
+| `insider/` | `/insider` | Insider referral requests between users |
+| `salary/` | `/salary` | Salary insight aggregation |
+| `courses/` | `/courses` | Learning course recommendations |
+| `admin/` | `/admin` | Admin moderation endpoints |
+
+## AI pipeline (`backend/ai/`)
+
+The `backend/ai/` directory contains independent sub-packages for each AI capability:
+
+```
+backend/ai/
+├── ats/        # ATS scoring — parses resume, scores against criteria, returns report
+├── benchmark/  # Benchmark score relative to selected candidate pool
+├── matching/   # Semantic similarity between resume and job embeddings
+├── optimizer/  # Premium: rewrites resume sections for a target job description
+├── prompts/    # LLM prompt templates shared across modules
+├── resume/     # Resume ingestion: extract text, chunk, parse structured data
+└── retriever/  # Hybrid keyword + vector search with reranking
+```
+
+### Resume processing pipeline
+
+When a candidate uploads a resume, the following sequence runs asynchronously via Celery:
+
+1. **File storage** — The file is saved to local disk (dev) or AWS S3 (prod) and its path is recorded in the `resumes` table.
+2. **Text extraction** — PyMuPDF (PDF) or python-docx (Word) extracts raw text.
+3. **Structured parsing** — GPT-4o-mini extracts structured fields (skills, experience, education) from the raw text.
+4. **Chunking** — The resume is split into sections (summary, experience, education, skills) and each chunk is stored in `resume_chunks`.
+5. **Embedding generation** — OpenAI `text-embedding-3-small` generates a vector for each chunk and for the full resume. Embeddings are stored in the database and indexed in pgvector or Pinecone.
+6. **ATS scoring** — The `backend/ai/ats/` module scores the resume across multiple dimensions and writes the score and detailed report back to the `resumes` row.
+
+## Database models (`backend/models.py`)
+
+The core entities and their relationships:
+
+```
+User  ──────────────────── Resume ─── ResumeChunk
+  │                            │
+  │ (role: jobseeker)          └── ats_score, embedding
+  │
+  └── Application ─── Job ─── Company
+           │                      │
+           └── StageHistory   Recruiter
+```
+
+Additional models: `Subscription`, `KarenMemory`, `Referral`, `InsiderReferralRequest`, `SalaryInsight`, `SelectedPoolEntry`, `RoundClearerEntry`, `InAppNotification`.
+
+Pipeline stages are a fixed enum: `applied → ats_screening → ats_rejected → round_1 → round_2 → round_3 → hr_round → offer → selected / withdrawn`.
+
+## Vector database backends (`backend/vector_db/`)
+
+HireFlow supports two vector backends, controlled by the `VECTOR_BACKEND` environment variable:
+
+| Backend | When to use | Config |
+|---|---|---|
+| `pgvector` | Development, self-hosted production | Set `VECTOR_BACKEND=pgvector`. Requires the pgvector extension on PostgreSQL. SQLite falls back to storing embeddings as text. |
+| `pinecone` | Cloud production | Set `VECTOR_BACKEND=pinecone` and provide `PINECONE_API_KEY`, `PINECONE_ENV`, and `PINECONE_INDEX`. Default index name is `hireflow`. |
+
+## Storage backends (`backend/storage/`)
+
+File storage is similarly pluggable via `STORAGE_BACKEND`:
+
+| Backend | When to use | Config |
+|---|---|---|
+| `local` | Development | Files are saved to a local directory. No additional config needed. |
+| `s3` | Production | Set `STORAGE_BACKEND=s3` and provide `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_BUCKET`, and `AWS_REGION` (default: `ap-south-1`). |
+
+## Authentication
+
+HireFlow uses JWT bearer tokens. Tokens are signed with `JWT_SECRET` using the `HS256` algorithm and expire after 1440 minutes (24 hours) by default, configurable via `JWT_EXPIRE_MINUTES`. All protected endpoints expect an `Authorization: Bearer <token>` header.
+
+<Info>
+  For production deployment steps — switching database, storage, and vector backends — see [deployment configuration](/deployment/configuration) and [production checklist](/deployment/production).
+</Info>

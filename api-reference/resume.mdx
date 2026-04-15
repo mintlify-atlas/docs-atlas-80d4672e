@@ -1,0 +1,267 @@
+---
+title: "Resume API — upload, parse, and score resumes"
+description: "Upload PDF or DOCX resumes for AI parsing and ATS scoring. Retrieve scores, benchmark against job titles, and find matching job postings."
+---
+
+The Resume API handles everything related to a candidate's resume: file upload, AI-powered parsing, ATS scoring, benchmark comparisons, and job matching. Only one resume is active per user at a time — uploading a new file automatically deactivates the previous one.
+
+All endpoints require authentication. Only PDF and DOCX files are accepted; any other format returns a `400` error.
+
+---
+
+## POST /api/v1/resume/upload
+
+Upload a resume file. The file is stored and immediately processed through the AI parsing and ATS scoring pipeline.
+
+**Auth required:** Yes  
+**Returns:** `202 Accepted`
+
+<Warning>
+  Uploading a new resume deactivates your previous resume. Any in-progress applications retain their original resume snapshot.
+</Warning>
+
+<ParamField body="file" type="file" required>
+  The resume file. Must be `application/pdf` or `application/vnd.openxmlformats-officedocument.wordprocessingml.document` (DOCX). Send as `multipart/form-data`.
+</ParamField>
+
+### Response
+
+<ResponseField name="resume_id" type="string (UUID)">
+  The ID of the newly created resume record.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Processing status. Returns `"processed"` when the AI pipeline has completed.
+</ResponseField>
+
+<CodeGroup>
+```bash Request
+curl -X POST http://localhost:8000/api/v1/resume/upload \
+  -H "Authorization: Bearer <your_token>" \
+  -F "file=@/path/to/resume.pdf"
+```
+
+```json Response
+{
+  "resume_id": "b3f1a2c4-d5e6-7890-bcde-f01234567890",
+  "status": "processed"
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `400` | File type is not PDF or DOCX |
+| `401` | Not authenticated |
+
+---
+
+## GET /api/v1/resume/me
+
+Returns the current user's active resume along with its ATS score, parsed data, and a presigned download URL.
+
+**Auth required:** Yes
+
+### Response
+
+<ResponseField name="resume_id" type="string (UUID)">
+  ID of the active resume.
+</ResponseField>
+
+<ResponseField name="ats_score" type="number">
+  ATS compatibility score from 0–100. Higher is better.
+</ResponseField>
+
+<ResponseField name="ats_report" type="object">
+  Detailed ATS analysis report with section-by-section feedback.
+</ResponseField>
+
+<ResponseField name="parsed_data" type="object">
+  Structured data extracted from the resume: skills, experience, education, etc.
+</ResponseField>
+
+<ResponseField name="file_url" type="string">
+  Presigned URL to download the original resume file. URL expires after a short period.
+</ResponseField>
+
+<CodeGroup>
+```bash Request
+curl http://localhost:8000/api/v1/resume/me \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+{
+  "resume_id": "b3f1a2c4-d5e6-7890-bcde-f01234567890",
+  "ats_score": 82.5,
+  "ats_report": {
+    "sections": {
+      "contact": { "score": 100, "feedback": "All contact fields present" },
+      "experience": { "score": 80, "feedback": "Quantify achievements with metrics" },
+      "skills": { "score": 75, "feedback": "Add more technical keywords" }
+    },
+    "overall_feedback": "Strong resume. Improve skills section for better ATS matching."
+  },
+  "parsed_data": {
+    "name": "Alex Rivera",
+    "skills": ["Python", "FastAPI", "PostgreSQL"],
+    "experience_years": 4
+  },
+  "file_url": "https://storage.example.com/resumes/b3f1a2c4/resume.pdf?token=..."
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `401` | Not authenticated |
+| `404` | No resume uploaded yet |
+
+---
+
+## GET /api/v1/resume/{resume_id}/ats
+
+Retrieve the ATS score and report for a specific resume by ID.
+
+**Auth required:** Yes  
+Recruiters and admins can access any resume. Job seekers can only access their own.
+
+<ParamField path="resume_id" type="string (UUID)" required>
+  The resume ID.
+</ParamField>
+
+### Response
+
+<ResponseField name="score" type="number">
+  ATS compatibility score from 0–100.
+</ResponseField>
+
+<ResponseField name="report" type="object">
+  Detailed ATS analysis report.
+</ResponseField>
+
+<CodeGroup>
+```bash Request
+curl http://localhost:8000/api/v1/resume/b3f1a2c4-d5e6-7890-bcde-f01234567890/ats \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+{
+  "score": 82.5,
+  "report": {
+    "sections": {
+      "contact": { "score": 100, "feedback": "All contact fields present" },
+      "experience": { "score": 80, "feedback": "Quantify achievements with metrics" }
+    },
+    "overall_feedback": "Strong resume. Improve skills section for better ATS matching."
+  }
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `401` | Not authenticated |
+| `403` | Attempting to access another user's resume without recruiter/admin role |
+| `404` | Resume not found |
+
+---
+
+## GET /api/v1/resume/{resume_id}/benchmark
+
+Compare this resume against the typical benchmark for a given job title. Returns a gap analysis showing what's missing to meet industry standards.
+
+**Auth required:** Yes
+
+<ParamField path="resume_id" type="string (UUID)" required>
+  The resume ID.
+</ParamField>
+
+<ParamField query="job_title" type="string" required>
+  The job title to benchmark against (e.g. `"Senior Backend Engineer"`).
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl "http://localhost:8000/api/v1/resume/b3f1a2c4-d5e6-7890-bcde-f01234567890/benchmark?job_title=Senior+Backend+Engineer" \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+{
+  "job_title": "Senior Backend Engineer",
+  "overall_match": 74.2,
+  "gaps": {
+    "missing_skills": ["Kubernetes", "Go"],
+    "experience_gap_years": 1
+  },
+  "strengths": ["Python", "FastAPI", "PostgreSQL"]
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `400` | `job_title` query param is missing |
+| `401` | Not authenticated |
+| `404` | Resume not found |
+
+---
+
+## GET /api/v1/resume/{resume_id}/jobs
+
+Return a ranked list of job postings that match this resume using AI similarity scoring.
+
+**Auth required:** Yes
+
+<ParamField path="resume_id" type="string (UUID)" required>
+  The resume ID.
+</ParamField>
+
+<ParamField query="limit" type="integer" default="20">
+  Maximum number of jobs to return. Cannot exceed `50`.
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl "http://localhost:8000/api/v1/resume/b3f1a2c4-d5e6-7890-bcde-f01234567890/jobs?limit=10" \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+[
+  {
+    "job_id": "c4d5e6f7-a1b2-3456-cdef-012345678901",
+    "title": "Backend Engineer",
+    "company": "Acme Corp",
+    "match_score": 91.3,
+    "location": "San Francisco",
+    "remote_ok": true
+  },
+  {
+    "job_id": "d5e6f7a1-b2c3-4567-defa-123456789012",
+    "title": "Python Developer",
+    "company": "Startup Inc",
+    "match_score": 87.1,
+    "location": "Remote",
+    "remote_ok": true
+  }
+]
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `401` | Not authenticated |
+| `404` | Resume not found |

@@ -1,0 +1,156 @@
+---
+title: "KAREN AI Agent API — career coaching chat"
+description: "Chat with KAREN, HireFlow's AI career coach. Job seekers get honest coaching; recruiters get talent analysis. Supports persistent memory per user."
+---
+
+KAREN is HireFlow's built-in AI agent. Job seekers receive direct, unfiltered career coaching — resume critique, interview prep, job search strategy. Recruiters get a sharp lens on candidate quality and talent pipeline analysis. KAREN adapts her behavior based on the authenticated user's role automatically.
+
+KAREN maintains a persistent memory per user. Each conversation builds on previous ones until you explicitly clear the memory.
+
+---
+
+## POST /api/v1/karen/chat
+
+Send a message to KAREN and receive a reply.
+
+**Auth required:** Yes
+
+<ParamField body="message" type="string" required>
+  Your message to KAREN. Can be a question, a request, or free-form text.
+</ParamField>
+
+### Response
+
+<ResponseField name="reply" type="string">
+  KAREN's response to your message.
+</ResponseField>
+
+<ResponseField name="action_taken" type="string">
+  If KAREN performed an action on your behalf (e.g. applied to a job), a description is returned here. `null` if no action was taken.
+</ResponseField>
+
+<ResponseField name="suggestions" type="string[]">
+  Follow-up prompts or recommended next steps. May be an empty array.
+</ResponseField>
+
+<CodeGroup>
+```bash Request (job seeker)
+curl -X POST http://localhost:8000/api/v1/karen/chat \
+  -H "Authorization: Bearer <your_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "My ATS score is 68. What should I fix first?"
+  }'
+```
+
+```json Response
+{
+  "reply": "68 is below the threshold most companies set (usually 75+). Your biggest issue is skills — you're missing keywords that ATS systems scan for. Add a dedicated Skills section with exact terms from the job descriptions you're targeting. Prioritize Python, FastAPI, and PostgreSQL if you're going for backend roles. That alone could push you to 80+.",
+  "action_taken": null,
+  "suggestions": [
+    "Show me which skills are most important for Senior Backend Engineer roles",
+    "How do I format my experience section for better ATS scores?",
+    "Can you review my current resume against a specific job?"
+  ]
+}
+```
+</CodeGroup>
+
+<CodeGroup>
+```bash Request (recruiter)
+curl -X POST http://localhost:8000/api/v1/karen/chat \
+  -H "Authorization: Bearer <recruiter_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Which candidates in the round_1 stage for the Backend Engineer role look strongest?"
+  }'
+```
+
+```json Response
+{
+  "reply": "Looking at your Backend Engineer pipeline: Alex Rivera (match score 91.5) and Jordan Kim (match score 87.2) stand out in Round 1. Alex has direct FastAPI experience and has cleared similar roles before. Jordan's ATS score is slightly lower but shows strong system design experience that's harder to quantify. I'd prioritize Alex for a technical screen first.",
+  "action_taken": null,
+  "suggestions": [
+    "Show me Alex's full resume benchmark",
+    "Draft interview questions for a Python backend screen",
+    "What's the typical timeline from Round 1 to offer for this role type?"
+  ]
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `401` | Not authenticated |
+
+---
+
+## GET /api/v1/karen/memory
+
+Retrieve KAREN's conversation memory for the current user — includes message history and a running summary of past conversations.
+
+**Auth required:** Yes
+
+### Response
+
+Returns the raw memory object. Structure includes the message history array and an optional summary string that KAREN generates when the history grows long.
+
+<CodeGroup>
+```bash Request
+curl http://localhost:8000/api/v1/karen/memory \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+{
+  "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "messages": [
+    { "role": "user", "content": "My ATS score is 68. What should I fix first?" },
+    { "role": "assistant", "content": "68 is below the threshold most companies set..." }
+  ],
+  "summary": "User is a backend engineer targeting senior roles. ATS score is 68. Working on improving skills section.",
+  "total_messages": 6
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `401` | Not authenticated |
+
+---
+
+## DELETE /api/v1/karen/memory
+
+Clear all of KAREN's memory for the current user. After this call, KAREN starts fresh with no context from previous conversations.
+
+**Auth required:** Yes
+
+### Response
+
+<ResponseField name="message" type="string">
+  Confirmation that memory has been cleared.
+</ResponseField>
+
+<CodeGroup>
+```bash Request
+curl -X DELETE http://localhost:8000/api/v1/karen/memory \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+{
+  "message": "Memory cleared. KAREN has forgotten everything."
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `401` | Not authenticated |

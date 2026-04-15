@@ -1,0 +1,134 @@
+---
+title: "Premium resume optimizer: rewrite for every job"
+description: "How HireFlow's Premium optimizer rewrites resume sections, improves bullets with STAR format, and projects a new ATS score against any job description."
+---
+
+The resume optimizer is a **Premium feature** (`SubscriptionTier.PREMIUM`). It uses GPT-4o-mini to rewrite your resume content specifically for a target job description — rephrasing your actual experience to highlight what's most relevant, without fabricating anything.
+
+<Warning>
+  The optimizer rephrases and reorganizes your existing experience. It does not add experience you don't have. A tailored resume still needs to genuinely match the role — if the underlying skills gap is large, a higher ATS score will not compensate when a recruiter reads it.
+</Warning>
+
+## What the optimizer produces
+
+Calling the `JDTailorer.tailor()` pipeline returns:
+
+```json
+{
+  "tailored_sections": {
+    "summary": "3-sentence professional summary targeting the role...",
+    "experience": "Rewritten experience section...",
+    "experience_bullets": ["Led migration to microservices, reducing latency by 40%", "..."],
+    "skills": "Rewritten skills section...",
+    "projects": "Rewritten projects section..."
+  },
+  "projected_ats": 84.5,
+  "ats_breakdown": {
+    "sections": 23,
+    "keywords": 32,
+    "format": 18,
+    "length": 10,
+    "clarity": 9
+  },
+  "job_title": "Senior Backend Engineer",
+  "company": "Acme Corp"
+}
+```
+
+`projected_ats` is the ATS score estimated by running `ATSScorer.score()` on the combined tailored text. It gives you a preview of how the rewritten resume would score before you apply.
+
+## The three optimizer modules
+
+### `ResumeRewriter` — section rewriting
+
+`resume_rewriter.py` rewrites individual sections to better match the job description. It processes sections in priority order: `summary`, `experience`, `skills`, `projects`.
+
+For each section, the prompt instructs GPT-4o-mini to:
+- Use strong action verbs
+- Quantify achievements where possible
+- Mirror JD keywords naturally (not forced stuffing)
+- Keep the same approximate length
+- Return only the rewritten text (no commentary)
+
+Input is capped at 3 000 characters per section and 1 500 characters of JD context per call.
+
+`ResumeRewriter.generate_summary()` produces a separate targeted 3-sentence professional summary using the candidate's name, years of experience, top skills, target role, and company name.
+
+### `BulletImprover` — STAR-format bullets
+
+`bullet_improver.py` transforms weak experience bullets into strong STAR-format statements.
+
+STAR stands for **Situation, Task, Action, Result**. The improver:
+1. Extracts individual bullet lines from the rewritten experience section (lines longer than 20 characters).
+2. Sends up to 15 bullets to GPT-4o-mini with instructions to add metrics, keep each bullet under 20 words, and frame results clearly.
+3. Returns the improved bullets as a list.
+
+**Before:**
+```
+- Worked on backend services for the platform
+```
+
+**After:**
+```
+- Refactored backend services using FastAPI, cutting average response time by 35%
+```
+
+### `JDTailorer` — full tailoring pipeline
+
+`jd_tailorer.py` orchestrates the other two modules in a single call:
+
+<Steps>
+  <Step title="Rewrite all sections">
+    `ResumeRewriter.rewrite_full_resume()` rewrites `summary`, `experience`, `skills`, and `projects` toward the target JD.
+  </Step>
+  <Step title="Improve experience bullets">
+    `BulletImprover.improve()` runs on the rewritten experience section to convert bullets to STAR format.
+  </Step>
+  <Step title="Generate targeted summary">
+    `ResumeRewriter.generate_summary()` creates a fresh 3-sentence summary for the specific role and company.
+  </Step>
+  <Step title="Project new ATS score">
+    The combined tailored text is scored with `ATSScorer.score()` to produce a `projected_ats` estimate.
+  </Step>
+</Steps>
+
+## API usage
+
+The optimizer is gated by subscription tier. Requests from `FREE` tier users receive a `403` response.
+
+```http
+POST /api/v1/resume/{resume_id}/optimize
+Authorization: Bearer <token>
+
+{
+  "job_title": "Senior Backend Engineer",
+  "jd_text": "We are looking for a Python engineer...",
+  "company": "Acme Corp"
+}
+```
+
+Response:
+
+```json
+{
+  "tailored_sections": { ... },
+  "projected_ats": 84.5,
+  "ats_breakdown": { ... },
+  "job_title": "Senior Backend Engineer",
+  "company": "Acme Corp"
+}
+```
+
+<Info>
+  The optimizer does not automatically save the tailored resume to your profile. You receive the rewritten content and choose to apply it. Your original `Resume.raw_text` and `parsed_data` are not modified.
+</Info>
+
+## Upgrade to Premium
+
+To access the optimizer, your account must have `tier = "premium"`. Upgrade through `POST /api/v1/subscriptions/upgrade` using Razorpay checkout. See [Subscriptions](/api-reference/applications) for details.
+
+## Related pages
+
+- [ATS scoring](/ai/ats-scoring) — understand the score the optimizer is trying to improve
+- [Resume analysis](/ai/resume-analysis) — how your original resume is parsed before optimization
+- [Candidate matching](/ai/candidate-matching) — how the final resume is matched to jobs after applying

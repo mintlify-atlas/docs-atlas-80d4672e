@@ -1,0 +1,121 @@
+---
+title: "Set up your company profile on HireFlow"
+description: "Link your recruiter account to a company so you can post jobs, invite teammates, and track hiring activity from one shared dashboard."
+---
+
+Before you can post jobs on HireFlow, your recruiter account must be linked to a company. The link is stored in a `Recruiter` record that pairs your `user_id` with a `company_id`. Multiple recruiters can belong to the same company — useful for teams where several people manage hiring together.
+
+<Info>
+  Company records are created by an admin (`POST /api/v1/companies` requires admin role). Once your company exists in the system, any recruiter belonging to that company can invite additional recruiters via email.
+</Info>
+
+## The Company model
+
+Every company on HireFlow has the following fields:
+
+| Field         | Type   | Description                                              |
+| ------------- | ------ | -------------------------------------------------------- |
+| `id`          | UUID   | Auto-generated primary key.                              |
+| `name`        | string | Display name shown on job listings.                      |
+| `slug`        | string | URL-friendly unique identifier (e.g. `acme-corp`).       |
+| `logo_url`    | string | Public URL to the company logo image.                    |
+| `website`     | string | Company website URL.                                     |
+| `description` | text   | A free-text description of the company shown to candidates. |
+
+## View your company profile
+
+Once your account is linked to a company, fetch your company details with:
+
+```bash
+curl -X GET http://localhost:8000/api/v1/companies/me \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json
+{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "name": "Acme Corp",
+  "slug": "acme-corp",
+  "logo_url": "https://cdn.example.com/acme-logo.png",
+  "website": "https://acme.example.com",
+  "description": "We build the best widgets on the planet."
+}
+```
+
+## Update your company profile
+
+Recruiters can update company details at any time using the `PATCH` endpoint:
+
+```bash
+curl -X PATCH http://localhost:8000/api/v1/companies/<company_id> \
+  -H "Authorization: Bearer <your_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Acme Corporation",
+    "logo_url": "https://cdn.example.com/acme-logo-v2.png",
+    "website": "https://www.acme.example.com",
+    "description": "We build the best widgets and rockets on the planet."
+  }'
+```
+
+Only the fields you include in the request body are updated. Omitted fields are left unchanged.
+
+## Check your company dashboard stats
+
+Get a summary of active jobs, total applicants, and pipeline stage breakdown for your company:
+
+```bash
+curl -X GET http://localhost:8000/api/v1/companies/me/stats \
+  -H "Authorization: Bearer <your_token>"
+```
+
+## Invite another recruiter
+
+If a colleague already has a HireFlow account, you can link them to your company by inviting them via their email address:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/companies/<company_id>/invite \
+  -H "Authorization: Bearer <your_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "colleague@acme.example.com"}'
+```
+
+```json
+{
+  "message": "Recruiter invited successfully"
+}
+```
+
+<Tip>
+  The invited user must already have a registered HireFlow account with the `recruiter` role. If they have not registered yet, ask them to sign up first with `"role": "recruiter"` before you send the invite.
+</Tip>
+
+## How recruiter linking works
+
+Internally, each recruiter-company relationship is stored as a `Recruiter` row:
+
+```
+Recruiter
+├── id         (UUID)
+├── user_id    → users.id
+└── company_id → companies.id
+```
+
+This means one user can only be a recruiter for one company at a time. When you call `GET /api/v1/companies/me`, the API resolves the company through this relationship using your authenticated `user_id`.
+
+<Note>
+  Multiple recruiters can share the same `company_id`, giving your whole team access to the same job listings and pipeline.
+</Note>
+
+## Next steps
+
+With your company profile ready, you can start creating job postings.
+
+<CardGroup cols={2}>
+  <Card title="Create a job posting" icon="briefcase" href="/recruiters/job-posting">
+    Learn the job lifecycle and how to get your posting approved and live.
+  </Card>
+  <Card title="Candidate pipeline" icon="users" href="/recruiters/candidate-pipeline">
+    Move candidates through stages once applications start coming in.
+  </Card>
+</CardGroup>

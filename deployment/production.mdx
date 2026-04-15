@@ -1,0 +1,194 @@
+---
+title: "Deploy HireFlow to production"
+description: "Step-by-step production checklist covering PostgreSQL, pgvector, S3 storage, Pinecone, Redis, backend hosting options, and Vercel frontend deployment."
+---
+
+Deploying HireFlow to production means swapping out the development defaults (SQLite, local file storage, in-process Redis) for managed services that are durable, scalable, and secure. Work through this checklist in order — each step depends on the previous one being complete.
+
+<Warning>
+Never commit your `.env` file to version control. Add it to `.gitignore` before your first commit. All secret values should be injected at deploy time through your platform's environment variable UI or a secrets manager.
+</Warning>
+
+---
+
+## Production checklist
+
+<Steps>
+
+<Step title="Provision a PostgreSQL database with pgvector">
+HireFlow requires PostgreSQL with the `pgvector` extension. The easiest way to get both is with the official Docker image:
+
+```bash
+docker run -d \
+  --name hireflow-postgres \
+  -e POSTGRES_DB=hireflow \
+  -e POSTGRES_USER=hireflow \
+  -e POSTGRES_PASSWORD=your-strong-password \
+  -p 5432:5432 \
+  pgvector/pgvector:pg16
+```
+
+If you are using a managed database (RDS, Supabase, Neon, etc.), enable the extension manually after the database is created:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+Then set `DATABASE_URL` in your environment:
+
+```env
+DATABASE_URL=postgresql://hireflow:your-strong-password@your-db-host:5432/hireflow
+```
+</Step>
+
+<Step title="Run database migrations">
+HireFlow uses Alembic to manage schema migrations. Run this once after your database is provisioned, and again after every deploy that includes model changes:
+
+```bash
+cd backend
+alembic upgrade head
+```
+
+<Note>
+If this is a fresh database, `alembic upgrade head` creates all tables including the `vector` columns used by pgvector. Do not use `Base.metadata.create_all()` in production — it bypasses migration history.
+</Note>
+</Step>
+
+<Step title="Configure a strong JWT secret">
+Generate a cryptographically random secret and set it as `JWT_SECRET`. This value signs all authentication tokens — anyone who knows it can impersonate any user.
+
+```bash
+openssl rand -hex 32
+```
+
+```env
+JWT_SECRET=the-output-from-openssl-above
+```
+
+<Warning>
+Never reuse a development `JWT_SECRET` in production. Rotating this value invalidates all existing sessions.
+</Warning>
+</Step>
+
+<Step title="Switch storage to AWS S3">
+Local file storage (`STORAGE_BACKEND=local`) writes resume files to the server's filesystem, which is ephemeral on most platforms. Switch to S3 for durable, persistent storage.
+
+Create an S3 bucket and an IAM user with `s3:PutObject`, `s3:GetObject`, and `s3:DeleteObject` permissions on that bucket, then set:
+
+```env
+STORAGE_BACKEND=s3
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+AWS_S3_BUCKET=hireflow-resumes-prod
+AWS_REGION=ap-south-1
+```
+
+<Tip>
+On EC2, attach an IAM role to the instance instead of using static credentials. Remove `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` from the environment — the AWS SDK will pick up the role automatically.
+</Tip>
+</Step>
+
+<Step title="Switch to Pinecone for vector search (optional)">
+`VECTOR_BACKEND=pgvector` works in production and is sufficient for most deployments. Switch to Pinecone if you need dedicated vector infrastructure or expect a very large resume corpus.
+
+Create a Pinecone index named `hireflow` with **1536 dimensions** (matching `text-embedding-3-small`) and **cosine** metric, then set:
+
+```env
+VECTOR_BACKEND=pinecone
+PINECONE_API_KEY=pcsk_...
+PINECONE_ENV=us-east-1-aws
+PINECONE_INDEX=hireflow
+```
+</Step>
+
+<Step title="Configure SendGrid for email notifications">
+HireFlow sends transactional emails when candidates move through pipeline stages. Create a SendGrid account, verify your sender domain, and generate an API key.
+
+```env
+SENDGRID_API_KEY=SG.xxxx
+FROM_EMAIL=noreply@yourdomain.com
+```
+
+Verify delivery by triggering a pipeline stage change after deployment. If emails are not arriving, check the SendGrid Activity Feed for bounces or authentication errors.
+</Step>
+
+<Step title="Provision cloud Redis (Upstash)">
+Celery requires Redis for its task queue. For a fully managed option with no infrastructure to maintain, use [Upstash](https://upstash.com).
+
+Create a Redis database on Upstash, then copy the TLS connection URL into your environment:
+
+```env
+REDIS_URL=rediss://default:your-token@your-host.upstash.io:6380
+CELERY_BROKER_URL=rediss://default:your-token@your-host.upstash.io:6380
+CELERY_RESULT_BACKEND=rediss://default:your-token@your-host.upstash.io:6380/1
+```
+
+<Note>
+Upstash URLs use `rediss://` (with double `s`) for TLS. Standard `redis://` will not connect.
+</Note>
+</Step>
+
+<Step title="Deploy the backend">
+HireFlow's FastAPI backend can be deployed to any platform that runs containers or Python processes. Three common options:
+
+**Railway**
+
+Connect your repository in the Railway dashboard. Set all environment variables in the Railway service settings. Railway auto-detects the `Procfile` or `Dockerfile` and deploys on every push to `main`.
+
+**Render**
+
+Create a new Web Service pointing to your repository. Set the start command to:
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+Add a second Background Worker service for Celery using:
+
+```bash
+celery -A workers.celery_app worker --loglevel=info
+```
+
+**EC2 / VPS**
+
+Use the included `docker.yml` to run all services together:
+
+```bash
+POSTGRES_PASSWORD=your-db-password docker compose -f docker.yml up -d
+```
+
+This starts PostgreSQL (with pgvector), Redis, the FastAPI backend, a Celery worker, the Next.js frontend, and an Nginx reverse proxy on ports 80 and 443.
+</Step>
+
+<Step title="Deploy the frontend to Vercel">
+The Next.js frontend deploys to Vercel with no configuration beyond setting one environment variable.
+
+1. Import your repository in the [Vercel dashboard](https://vercel.com/new).
+2. Set the environment variable `NEXT_PUBLIC_API_URL` to your backend URL:
+
+```env
+NEXT_PUBLIC_API_URL=https://api.yourdomain.com/api/v1
+```
+
+3. Deploy. Vercel detects Next.js automatically and configures the build.
+
+<Tip>
+Set `NEXT_PUBLIC_API_URL` in Vercel's **Production**, **Preview**, and **Development** environments separately so pull request previews point to a staging backend rather than production.
+</Tip>
+</Step>
+
+</Steps>
+
+---
+
+## Minimum required variables for production
+
+The following variables have no defaults and the backend will not start without them:
+
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `OPENAI_API_KEY` | Required for all AI features |
+| `JWT_SECRET` | Must be a long, random string |
+
+All other variables are optional, but disabling email (`SENDGRID_API_KEY`) or storage (`STORAGE_BACKEND=local`) degrades functionality. See [Configuration](/deployment/configuration) for the full variable reference.

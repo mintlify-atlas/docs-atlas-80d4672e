@@ -1,0 +1,326 @@
+---
+title: "Applications API — apply to jobs and track status"
+description: "Submit job applications, track your pipeline stage, view match and ATS scores, and withdraw from positions you no longer want to pursue."
+---
+
+The Applications API lets job seekers apply to postings, check their current pipeline stage, and view how they're scoring against each role. You must have an active resume uploaded before applying — see [Resume upload](/api-reference/resume) to get started.
+
+Each application tracks two stage fields: `current_stage` (where you are now) and `highest_stage` (the furthest stage you've reached, even if later moved back).
+
+---
+
+## Pipeline stages
+
+Applications move through the following stages:
+
+| Stage | Description |
+|-------|-------------|
+| `applied` | Application submitted, awaiting ATS screening |
+| `ats_screening` | Resume is being evaluated by the ATS engine |
+| `ats_rejected` | Did not meet ATS threshold for this role |
+| `round_1` | Invited to first interview round |
+| `round_2` | Progressed to second round |
+| `round_3` | Progressed to third round |
+| `hr_round` | Final HR interview stage |
+| `offer` | Offer extended |
+| `selected` | Hired |
+| `withdrawn` | Candidate withdrew the application |
+
+---
+
+## POST /api/v1/applications
+
+Apply to a job. Uses your active resume by default if `resume_id` is omitted.
+
+**Auth required:** Yes  
+**Returns:** `201 Created`
+
+<ParamField body="job_id" type="string (UUID)" required>
+  The ID of the job to apply to.
+</ParamField>
+
+<ParamField body="resume_id" type="string (UUID)">
+  The resume to attach to this application. If omitted, your active resume is used automatically.
+</ParamField>
+
+### Response
+
+<ResponseField name="id" type="string (UUID)">
+  Application ID.
+</ResponseField>
+
+<ResponseField name="job_id" type="string (UUID)">
+  The job this application is for.
+</ResponseField>
+
+<ResponseField name="user_id" type="string (UUID)">
+  The applicant's user ID.
+</ResponseField>
+
+<ResponseField name="current_stage" type="string">
+  Current pipeline stage (see stage list above).
+</ResponseField>
+
+<ResponseField name="highest_stage" type="string">
+  The furthest stage reached in the pipeline.
+</ResponseField>
+
+<ResponseField name="match_score" type="number">
+  AI-computed percentage match between your resume and this job.
+</ResponseField>
+
+<ResponseField name="benchmark_score" type="number">
+  How your resume scores relative to the benchmark for this role.
+</ResponseField>
+
+<ResponseField name="ats_passed" type="boolean">
+  Whether the ATS screening was passed.
+</ResponseField>
+
+<ResponseField name="job_title" type="string">
+  Title of the job (denormalized for display).
+</ResponseField>
+
+<ResponseField name="company_name" type="string">
+  Hiring company name (denormalized for display).
+</ResponseField>
+
+<CodeGroup>
+```bash Request
+curl -X POST http://localhost:8000/api/v1/applications \
+  -H "Authorization: Bearer <your_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "job_id": "c4d5e6f7-a1b2-3456-cdef-012345678901"
+  }'
+```
+
+```json Response
+{
+  "id": "f7a1b2c3-d4e5-6789-fabc-345678901234",
+  "job_id": "c4d5e6f7-a1b2-3456-cdef-012345678901",
+  "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "current_stage": "applied",
+  "highest_stage": "applied",
+  "match_score": 84.2,
+  "benchmark_score": 71.5,
+  "ats_passed": null,
+  "job_title": "Senior Python Engineer",
+  "company_name": "Acme Corp"
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `401` | Not authenticated |
+| `404` | Job not found, or no active resume to attach |
+| `409` | You have already applied to this job |
+
+---
+
+## POST /api/v1/applications/quick-apply/{job_id}
+
+One-click apply using your active resume. No request body needed.
+
+**Auth required:** Yes  
+**Returns:** `201 Created`
+
+<ParamField path="job_id" type="string" required>
+  The ID of the job to apply to.
+</ParamField>
+
+Returns the same `ApplicationOut` shape as `POST /applications`.
+
+<CodeGroup>
+```bash Request
+curl -X POST http://localhost:8000/api/v1/applications/quick-apply/c4d5e6f7-a1b2-3456-cdef-012345678901 \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+{
+  "id": "f7a1b2c3-d4e5-6789-fabc-345678901234",
+  "job_id": "c4d5e6f7-a1b2-3456-cdef-012345678901",
+  "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "current_stage": "applied",
+  "highest_stage": "applied",
+  "match_score": 84.2,
+  "benchmark_score": 71.5,
+  "ats_passed": null,
+  "job_title": "Senior Python Engineer",
+  "company_name": "Acme Corp"
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `401` | Not authenticated |
+| `404` | Job not found, or no active resume uploaded |
+| `409` | Already applied to this job |
+
+---
+
+## GET /api/v1/applications
+
+List all applications submitted by the current user.
+
+**Auth required:** Yes
+
+Returns an array of `ApplicationOut` objects (see field descriptions above).
+
+<CodeGroup>
+```bash Request
+curl http://localhost:8000/api/v1/applications \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+[
+  {
+    "id": "f7a1b2c3-d4e5-6789-fabc-345678901234",
+    "job_id": "c4d5e6f7-a1b2-3456-cdef-012345678901",
+    "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "current_stage": "round_1",
+    "highest_stage": "round_1",
+    "match_score": 84.2,
+    "benchmark_score": 71.5,
+    "ats_passed": true,
+    "job_title": "Senior Python Engineer",
+    "company_name": "Acme Corp"
+  }
+]
+```
+</CodeGroup>
+
+---
+
+## GET /api/v1/applications/{app_id}
+
+Get details of a specific application.
+
+**Auth required:** Yes  
+You can only fetch your own applications.
+
+<ParamField path="app_id" type="string (UUID)" required>
+  The application ID.
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl http://localhost:8000/api/v1/applications/f7a1b2c3-d4e5-6789-fabc-345678901234 \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+{
+  "id": "f7a1b2c3-d4e5-6789-fabc-345678901234",
+  "job_id": "c4d5e6f7-a1b2-3456-cdef-012345678901",
+  "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "current_stage": "round_1",
+  "highest_stage": "round_1",
+  "match_score": 84.2,
+  "benchmark_score": 71.5,
+  "ats_passed": true,
+  "job_title": "Senior Python Engineer",
+  "company_name": "Acme Corp"
+}
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `401` | Not authenticated |
+| `403` | Application belongs to a different user |
+| `404` | Application not found |
+
+---
+
+## GET /api/v1/applications/{app_id}/history
+
+Returns the full stage transition history for an application. Each entry records when the application moved from one stage to another.
+
+**Auth required:** Yes
+
+<ParamField path="app_id" type="string (UUID)" required>
+  The application ID.
+</ParamField>
+
+### Response
+
+Returns an array of stage history entries.
+
+<ResponseField name="from_stage" type="string">
+  The stage the application moved from.
+</ResponseField>
+
+<ResponseField name="to_stage" type="string">
+  The stage the application moved to.
+</ResponseField>
+
+<ResponseField name="notes" type="string">
+  Recruiter notes added when moving the stage (if any).
+</ResponseField>
+
+<ResponseField name="moved_at" type="string (ISO 8601)">
+  Timestamp when the transition occurred.
+</ResponseField>
+
+<CodeGroup>
+```bash Request
+curl http://localhost:8000/api/v1/applications/f7a1b2c3-d4e5-6789-fabc-345678901234/history \
+  -H "Authorization: Bearer <your_token>"
+```
+
+```json Response
+[
+  {
+    "from_stage": "applied",
+    "to_stage": "ats_screening",
+    "notes": null,
+    "moved_at": "2026-04-10T09:15:00"
+  },
+  {
+    "from_stage": "ats_screening",
+    "to_stage": "round_1",
+    "notes": "Strong technical profile. Scheduling interview.",
+    "moved_at": "2026-04-12T14:30:00"
+  }
+]
+```
+</CodeGroup>
+
+---
+
+## DELETE /api/v1/applications/{app_id}/withdraw
+
+Withdraw an application. Sets `current_stage` to `withdrawn`.
+
+**Auth required:** Yes  
+**Returns:** `204 No Content`
+
+<ParamField path="app_id" type="string (UUID)" required>
+  The application ID.
+</ParamField>
+
+<CodeGroup>
+```bash Request
+curl -X DELETE http://localhost:8000/api/v1/applications/f7a1b2c3-d4e5-6789-fabc-345678901234/withdraw \
+  -H "Authorization: Bearer <your_token>"
+```
+</CodeGroup>
+
+### Error codes
+
+| Status | Description |
+|--------|-------------|
+| `401` | Not authenticated |
+| `403` | Application belongs to a different user |
+| `404` | Application not found |

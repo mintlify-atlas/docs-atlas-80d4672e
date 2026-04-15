@@ -1,0 +1,136 @@
+---
+title: "Upload and analyze your resume in HireFlow"
+description: "Supported formats, what happens after upload, and the four AI pipeline stages — text extraction, parsing, ATS scoring, and embedding generation."
+---
+
+When you upload a resume to HireFlow, it doesn't just get stored — it runs through a multi-stage AI pipeline that extracts structured data, scores it for ATS compatibility, and generates an embedding used for semantic job matching. This page explains exactly what happens and how to get the best results.
+
+## Supported formats
+
+HireFlow accepts **PDF** and **DOCX** only. Uploads in any other format are rejected with a `400` error.
+
+```bash
+curl -X POST http://localhost:8000/api/v1/resume/upload \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@resume.pdf"
+```
+
+A successful upload returns `202 Accepted` with the resume ID:
+
+```json
+{
+  "resume_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "status": "processed"
+}
+```
+
+<Tip>
+  PDF generally produces better ATS results than DOCX. PDF preserves layout consistently, while DOCX can introduce encoding or formatting artifacts during text extraction. Unless you need to edit the file, upload PDF.
+</Tip>
+
+## One active resume at a time
+
+HireFlow keeps track of which resume is currently active. When you upload a new file, **all previous resumes for your account are automatically deactivated**. Only your most recent upload is used for job matching and ATS scoring.
+
+<Note>
+  Your old resume records are not deleted — they are simply marked inactive. This preserves historical ATS scores and reports if you need to refer back to them.
+</Note>
+
+## The AI pipeline
+
+After upload, your file runs through four sequential stages:
+
+<Steps>
+  <Step title="Text extraction">
+    Raw text is extracted from the PDF or DOCX file and stored in the `raw_text` field. This plain text is the input for all subsequent stages.
+  </Step>
+
+  <Step title="Parsing">
+    The extracted text is parsed into structured data. The result is stored as JSON in the `parsed_data` field and includes fields such as:
+
+    - `skills` — list of identified technical and soft skills
+    - `current_title` — most recent job title
+    - `total_experience_years` — total years of work experience
+    - Contact information, education, and work history sections
+  </Step>
+
+  <Step title="ATS scoring">
+    The parsed data and raw text are passed to the ATS scorer, which evaluates your resume across five dimensions: sections, keywords, formatting, length, and clarity. The result is a score from 0–100 stored in `ats_score` and a full report in `ats_report`.
+
+    See [Understanding your ATS score](/job-seekers/ats-score) for a full breakdown of the report structure.
+  </Step>
+
+  <Step title="Embedding generation">
+    A semantic vector embedding is computed from your resume and stored in the `embedding` field. This embedding powers the job matching system — HireFlow compares it against job listing embeddings to find the closest semantic matches.
+  </Step>
+</Steps>
+
+## Viewing your resume data
+
+Once processing completes, fetch your active resume and its full analysis:
+
+```bash
+curl http://localhost:8000/api/v1/resume/me \
+  -H "Authorization: Bearer <token>"
+```
+
+```json
+{
+  "resume_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "ats_score": 74.5,
+  "ats_report": { ... },
+  "parsed_data": {
+    "skills": ["Python", "FastAPI", "PostgreSQL", "Docker"],
+    "current_title": "Backend Engineer",
+    "total_experience_years": 4
+  },
+  "file_url": "https://s3.amazonaws.com/..."
+}
+```
+
+You can also fetch the ATS report for a specific resume by ID:
+
+```bash
+curl http://localhost:8000/api/v1/resume/{resume_id}/ats \
+  -H "Authorization: Bearer <token>"
+```
+
+```json
+{
+  "score": 74.5,
+  "report": {
+    "grade": "B",
+    "breakdown": {
+      "sections": 22,
+      "keywords": 28,
+      "format": 16,
+      "length": 8,
+      "clarity": 9
+    },
+    "issues": [],
+    "warnings": ["Missing certifications section"],
+    "improvement_tips": [
+      "Use more industry-specific keywords throughout your resume"
+    ]
+  }
+}
+```
+
+## What gets stored
+
+The `Resume` model stores the following fields after the pipeline completes:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | UUID | Unique resume identifier |
+| `file_path` | string | S3 key for the uploaded file |
+| `raw_text` | text | Plain text extracted from the file |
+| `parsed_data` | JSON | Structured data: skills, titles, experience, etc. |
+| `ats_score` | float | ATS score from 0–100 |
+| `ats_report` | JSON | Full ATS report with breakdown and tips |
+| `embedding` | text | Semantic vector used for job matching |
+| `is_active` | boolean | Whether this is the current active resume |
+
+<Warning>
+  Do not close your browser or revoke your token immediately after uploading. The pipeline runs synchronously in most deployments — wait for the `processed` status in the response before navigating away.
+</Warning>

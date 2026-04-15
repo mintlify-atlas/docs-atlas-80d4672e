@@ -1,0 +1,180 @@
+---
+title: "Configure HireFlow with environment variables"
+description: "Reference for every environment variable HireFlow reads at startup, with required vs optional status, default values, and examples for each setting."
+---
+
+HireFlow is configured entirely through environment variables loaded from a `.env` file at the backend root. Copy `.env.example` to `.env` and fill in the required values before starting the server. Variables marked **Required** have no default and will cause the app to fail on startup if omitted.
+
+## .env template
+
+```env
+# ── Database ──────────────────────────────────────────
+DATABASE_URL=postgresql://user:password@localhost:5432/hireflow
+
+# ── Redis + Celery ────────────────────────────────────
+REDIS_URL=redis://localhost:6379/0
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/1
+
+# ── AI ────────────────────────────────────────────────
+OPENAI_API_KEY=sk-...
+EMBEDDING_MODEL=text-embedding-3-small
+LLM_MODEL=gpt-4o-mini
+
+# ── Vector DB ─────────────────────────────────────────
+VECTOR_BACKEND=pgvector
+PINECONE_API_KEY=
+PINECONE_ENV=
+PINECONE_INDEX=hireflow
+
+# ── Storage ───────────────────────────────────────────
+STORAGE_BACKEND=local
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_S3_BUCKET=
+AWS_REGION=ap-south-1
+
+# ── Auth ──────────────────────────────────────────────
+JWT_SECRET=replace-with-a-long-random-string
+JWT_ALGORITHM=HS256
+JWT_EXPIRE_MINUTES=1440
+
+# ── Email ─────────────────────────────────────────────
+SENDGRID_API_KEY=
+FROM_EMAIL=noreply@hireflow.in
+
+# ── Payments ──────────────────────────────────────────
+RAZORPAY_KEY_ID=
+RAZORPAY_KEY_SECRET=
+
+# ── External APIs ─────────────────────────────────────
+ADZUNA_APP_ID=
+ADZUNA_APP_KEY=
+ADZUNA_COUNTRY=in
+```
+
+---
+
+## Database
+
+| Variable | Required | Default | Example |
+|---|---|---|---|
+| `DATABASE_URL` | **Required** | — | `postgresql://user:pass@localhost:5432/hireflow` |
+
+`DATABASE_URL` accepts any SQLAlchemy-compatible connection string. Use SQLite (`sqlite:///./hireflow_dev.db`) for local development and PostgreSQL with the `pgvector` extension in production.
+
+---
+
+## Redis and Celery
+
+HireFlow uses Redis as a message broker and result backend for Celery background tasks (resume analysis, AI matching, email notifications).
+
+| Variable | Required | Default | Example |
+|---|---|---|---|
+| `REDIS_URL` | Optional | `redis://localhost:6379/0` | `rediss://default:token@host:6380` |
+| `CELERY_BROKER_URL` | Optional | `redis://localhost:6379/0` | `rediss://default:token@host:6380` |
+| `CELERY_RESULT_BACKEND` | Optional | `redis://localhost:6379/1` | `rediss://default:token@host:6380/1` |
+
+<Note>
+In production, all three Redis variables should point to your managed Redis instance. If you use Upstash, replace `redis://` with `rediss://` and include the password token in the URL.
+</Note>
+
+---
+
+## AI / OpenAI
+
+| Variable | Required | Default | Example |
+|---|---|---|---|
+| `OPENAI_API_KEY` | **Required** | — | `sk-proj-...` |
+| `EMBEDDING_MODEL` | Optional | `text-embedding-3-small` | `text-embedding-3-large` |
+| `LLM_MODEL` | Optional | `gpt-4o-mini` | `gpt-4o` |
+
+`EMBEDDING_MODEL` controls the model used to generate resume and job description embeddings. `LLM_MODEL` controls the model used for ATS scoring, candidate ranking, and the Karen AI assistant. Changing either model affects API costs and response quality.
+
+---
+
+## Vector database
+
+HireFlow supports two vector backends. Set `VECTOR_BACKEND` to choose between them.
+
+| Variable | Required | Default | Example |
+|---|---|---|---|
+| `VECTOR_BACKEND` | Optional | `pgvector` | `pinecone` |
+| `PINECONE_API_KEY` | Required if using Pinecone | `""` | `pcsk_...` |
+| `PINECONE_ENV` | Required if using Pinecone | `""` | `us-east-1-aws` |
+| `PINECONE_INDEX` | Optional | `hireflow` | `hireflow-prod` |
+
+- **`pgvector`** — stores vectors in PostgreSQL. No additional services needed. Recommended for getting started and for self-hosted deployments.
+- **`pinecone`** — uses the Pinecone managed vector database. Recommended for production at scale. Requires `PINECONE_API_KEY` and `PINECONE_ENV`.
+
+---
+
+## Storage
+
+Resume files are stored either on the local filesystem or in AWS S3. Set `STORAGE_BACKEND` to choose.
+
+| Variable | Required | Default | Example |
+|---|---|---|---|
+| `STORAGE_BACKEND` | Optional | `local` | `s3` |
+| `AWS_ACCESS_KEY_ID` | Required if using S3 | `""` | `AKIAIOSFODNN7EXAMPLE` |
+| `AWS_SECRET_ACCESS_KEY` | Required if using S3 | `""` | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` |
+| `AWS_S3_BUCKET` | Required if using S3 | `""` | `hireflow-resumes-prod` |
+| `AWS_REGION` | Optional | `ap-south-1` | `us-east-1` |
+
+<Warning>
+Never commit AWS credentials to version control. Use IAM roles or environment-level secret injection when deploying to Railway, Render, or EC2.
+</Warning>
+
+---
+
+## Auth / JWT
+
+| Variable | Required | Default | Example |
+|---|---|---|---|
+| `JWT_SECRET` | **Required** | — | `a3f9...` (64+ random chars) |
+| `JWT_ALGORITHM` | Optional | `HS256` | `HS256` |
+| `JWT_EXPIRE_MINUTES` | Optional | `1440` | `10080` |
+
+<Warning>
+`JWT_SECRET` must be a long, cryptographically random string in production. Anyone who knows this value can forge valid authentication tokens. Generate one with `openssl rand -hex 32`.
+</Warning>
+
+`JWT_EXPIRE_MINUTES` defaults to 1440 (24 hours). Set a shorter value for stricter session policies.
+
+---
+
+## Email
+
+HireFlow sends transactional emails (pipeline stage changes, application confirmations) via SendGrid.
+
+| Variable | Required | Default | Example |
+|---|---|---|---|
+| `SENDGRID_API_KEY` | Optional | `""` | `SG.xxxx` |
+| `FROM_EMAIL` | Optional | `noreply@hireflow.in` | `noreply@yourdomain.com` |
+
+Email delivery is disabled when `SENDGRID_API_KEY` is empty. Candidates and recruiters will not receive notifications.
+
+---
+
+## Payments
+
+HireFlow uses Razorpay to process premium plan purchases (resume optimizer, benchmark reports).
+
+| Variable | Required | Default | Example |
+|---|---|---|---|
+| `RAZORPAY_KEY_ID` | Optional | `""` | `rzp_live_...` |
+| `RAZORPAY_KEY_SECRET` | Optional | `""` | `...` |
+
+Payment features are disabled when these values are empty. Use `rzp_test_` keys in development.
+
+---
+
+## External APIs
+
+| Variable | Required | Default | Example |
+|---|---|---|---|
+| `ADZUNA_APP_ID` | Optional | `""` | `a1b2c3d4` |
+| `ADZUNA_APP_KEY` | Optional | `""` | `e5f6g7h8i9j0...` |
+| `ADZUNA_COUNTRY` | Optional | `in` | `gb` |
+
+HireFlow uses Adzuna to surface external job listings alongside internal postings. External job discovery is disabled when these values are empty. `ADZUNA_COUNTRY` accepts two-letter ISO country codes.

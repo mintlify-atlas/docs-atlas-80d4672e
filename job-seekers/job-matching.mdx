@@ -1,0 +1,126 @@
+---
+title: "How HireFlow matches you to the right jobs"
+description: "How HireFlow uses semantic embeddings to match your resume to open roles, what match scores mean, and how to apply and track your application pipeline."
+---
+
+HireFlow's matching system goes beyond keyword overlap. It uses semantic embeddings to understand the meaning of your resume and compare it against job descriptions — finding roles that fit your actual experience, not just roles that share the same words.
+
+## How semantic matching works
+
+When you upload a resume, HireFlow generates a vector embedding from your resume text. Every job listing also has an embedding computed from its title, description, and requirements. At match time, HireFlow uses a **hybrid retriever** that combines:
+
+1. **Semantic similarity** — cosine distance between your resume embedding and the job embedding, capturing conceptual fit even when exact terms differ.
+2. **Text overlap** — keyword-level signals that reinforce strong matches when specific skills and tools align directly.
+
+The two signals are fused and results are ranked by a final weighted score.
+
+### Match score calculation
+
+The final match score (0–100 float) is a weighted combination of three factors:
+
+| Factor | Weight | Description |
+|---|---|---|
+| Semantic similarity | 55% | How closely your resume embedding matches the job embedding |
+| ATS score | 25% | Your resume's overall ATS quality |
+| Experience fit | 20% | How your years of experience compare to the role's requirements |
+
+<Info>
+  Premium users have access to LLM-based reranking, which uses a language model to re-score the top candidates for even more accurate results. Free users receive standard hybrid matching.
+</Info>
+
+## Getting your matched jobs
+
+Fetch the top matching jobs for your active resume:
+
+```bash
+curl "http://localhost:8000/api/v1/resume/{resume_id}/jobs?limit=20" \
+  -H "Authorization: Bearer <token>"
+```
+
+The response returns a ranked list of jobs with their match scores:
+
+```json
+[
+  {
+    "job_id": "a1b2c3d4-...",
+    "title": "Senior Backend Engineer",
+    "company": "Acme Corp",
+    "location": "San Francisco, CA",
+    "remote_ok": true,
+    "job_type": "fulltime",
+    "salary_min": 140000,
+    "salary_max": 180000,
+    "hybrid_score": 0.87
+  },
+  {
+    "job_id": "e5f6a7b8-...",
+    "title": "Platform Engineer",
+    "company": "Startupco",
+    "location": "Remote",
+    "remote_ok": true,
+    "job_type": "fulltime",
+    "salary_min": 120000,
+    "salary_max": 160000,
+    "hybrid_score": 0.79
+  }
+]
+```
+
+You can request up to 50 results per call using the `limit` parameter (default: 20, max: 50).
+
+## Applying to a job
+
+Once you've identified a role, submit an application:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/applications \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "job_id": "a1b2c3d4-...",
+    "resume_id": "3fa85f64-..."
+  }'
+```
+
+Your application is created and immediately enters the pipeline at the `APPLIED` stage.
+
+## The hiring pipeline
+
+Every application moves through a defined set of stages. You can see both your `current_stage` and your `highest_stage` — the furthest point you reached even if you were later moved back.
+
+```
+APPLIED → ATS_SCREENING → ROUND_1 → ROUND_2 → ROUND_3 → HR_ROUND → OFFER → SELECTED
+```
+
+If your resume does not pass the automated ATS check, the application moves to `ATS_REJECTED`. Stages can also end in `WITHDRAWN` if you withdraw your application.
+
+<Note>
+  The `match_score` on your application record reflects how well your resume matched this specific job at the time you applied. This score is computed and stored when the application is created.
+</Note>
+
+## Filtering jobs
+
+When fetching matched jobs, you can apply filters to narrow the results. The following fields on the `Job` model can be used as filters:
+
+| Filter | Values | Example |
+|---|---|---|
+| `job_type` | `fulltime`, `parttime`, `contract`, `internship`, `remote` | Filter for remote roles only |
+| `location` | string | Filter by city or region |
+| `remote_ok` | `true` / `false` | Include only remote-friendly roles |
+
+Pass filters as query parameters or as part of the filter payload depending on the endpoint you're calling.
+
+## Tracking your applications
+
+After applying, check your application status and pipeline stage at any time through the applications API. Each application record includes:
+
+| Field | Description |
+|---|---|
+| `current_stage` | Where you are right now in the pipeline |
+| `highest_stage` | The furthest stage you've reached |
+| `match_score` | Your resume-to-job match score (0–100) |
+| `ats_passed` | Whether your resume cleared the ATS screening gate |
+
+<Tip>
+  You can also ask KAREN to show you your current applications and pipeline status. KAREN has access to your full application history and can explain why you were matched or rejected at each stage.
+</Tip>

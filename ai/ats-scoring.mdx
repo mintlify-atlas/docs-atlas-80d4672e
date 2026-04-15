@@ -1,0 +1,168 @@
+---
+title: "How HireFlow's ATS scoring engine works"
+description: "A technical breakdown of HireFlow's ATS scorer: five scoring categories, what each checks, how the 0–100 score is assembled, and how to improve it."
+---
+
+Every resume uploaded to HireFlow is automatically scored for Applicant Tracking System (ATS) compatibility. The score is a float from 0–100 and determines whether a candidate advances past automated screening. Understanding how it works helps both job seekers optimize their resumes and recruiters calibrate their thresholds.
+
+## Score composition
+
+The ATS score is the sum of five category scores, capped at 100:
+
+| Category | Max points | Module |
+|----------|-----------|--------|
+| Keywords | 35 | `keyword_extractor.py` |
+| Sections | 25 | `selection_validator.py` |
+| Format | 20 | `format_checker.py` |
+| Length | 10 | `report_generator.py` |
+| Clarity | 10 | GPT-4o-mini (LLM call) |
+| **Total** | **100** | `ATSReportGenerator.generate()` |
+
+The final numeric score maps to a letter grade:
+
+| Score | Grade |
+|-------|-------|
+| 90–100 | A |
+| 75–89 | B |
+| 60–74 | C |
+| 45–59 | D |
+| 0–44 | F |
+
+## Category details
+
+### Keywords (0–35)
+
+`KeywordExtractor` handles keyword scoring in two modes:
+
+**Without a job description (default at upload)** — the LLM assigns a `keyword_density` score from 0–35 based on how well the resume uses industry-relevant terminology and avoids generic language.
+
+**With a job description (JD-matched scoring)** — `ATSScorer.score_against_jd()` is called. The extractor sends the job description to GPT-4o-mini, which returns a structured object:
+
+```json
+{
+  "hard_skills": ["python", "fastapi"],
+  "soft_skills": ["leadership"],
+  "tools": ["docker", "git"],
+  "domain_terms": ["microservices", "agile"]
+}
+```
+
+These JD keywords are compared against keywords extracted from the resume (structured skills from `parsed_data` combined with unigrams and bigrams from the raw text). The keyword score is `coverage × 35`, where coverage is the fraction of JD keywords found in the resume.
+
+The `keyword_match` object in the ATS report includes:
+
+```json
+{
+  "matched": ["python", "fastapi", "docker"],
+  "missing": ["kubernetes", "terraform"],
+  "score": 28.5,
+  "coverage": 81.4
+}
+```
+
+### Sections (0–25)
+
+`SectionValidator` checks for the presence and quality of five critical resume sections:
+
+| Section | Points | Quality check |
+|---------|--------|--------------|
+| Contact | 6 | Email or phone detected |
+| Experience | 7 | At least 3 numbers/metrics in the section |
+| Education | 5 | Section keyword detected |
+| Skills | 5 | At least 4 skills listed (comma-separated) |
+| Summary | 2 | At least 20 words |
+
+A section that is present but fails its quality check earns full points but generates a warning. A missing section earns 0 points and is added to `missing_sections` in the report.
+
+### Format (0–20)
+
+`FormatChecker` deducts points for formatting issues that confuse ATS parsers:
+
+| Issue | Severity | Penalty |
+|-------|----------|---------|
+| Tables detected | High | −8 |
+| Multi-column layout (>4 instances) | High | −6 |
+| Special bullet characters (>8 instances) | Medium | −3 |
+| High non-ASCII character ratio (>3%) | Medium | −3 |
+| Curly/smart quotes (>5 instances) | Low | −1 |
+| Page numbers or header/footer text leaked | Low | −1 |
+| More than 4 URLs | Low | −1 |
+
+High-severity issues are surfaced as `issues` in the report. Medium and low issues appear as `warnings`.
+
+### Length (0–10)
+
+Scored by word count of the extracted raw text:
+
+| Word count | Points |
+|-----------|--------|
+| 400–900 | 10 |
+| 300–399 or 901–1200 | 7 |
+| 200–299 | 4 |
+| Below 200 or above 1200 | 2 |
+
+### Clarity (0–10)
+
+A second GPT-4o-mini call scores the resume for clarity and keyword density on a 0–10 scale. This call also returns a list of plain-English issues (e.g. "Passive voice overused in experience section").
+
+## The ATS report object
+
+`Resume.ats_report` is a JSON column containing the full `ATSReport`:
+
+```json
+{
+  "score": 72.5,
+  "grade": "C",
+  "breakdown": {
+    "sections": 22,
+    "keywords": 28,
+    "format": 17,
+    "length": 10,
+    "clarity": 8
+  },
+  "issues": ["Tables detected — ATS systems cannot parse table content reliably"],
+  "warnings": ["Add numbers and metrics to experience bullets"],
+  "missing_sections": [],
+  "keyword_match": {
+    "matched": ["python", "sql"],
+    "missing": ["kubernetes"],
+    "score": 28,
+    "coverage": 80.0
+  },
+  "format_issues": [
+    { "severity": "high", "message": "Tables detected...", "penalty": 8 }
+  ],
+  "section_results": {
+    "contact": { "present": true, "quality_ok": true, "points": 6, "suggestion": "" },
+    "experience": { "present": true, "quality_ok": false, "points": 7, "suggestion": "Add numbers..." }
+  },
+  "improvement_tips": [
+    "Remove tables and multi-column layouts — use single-column format",
+    "Use more industry-specific keywords throughout your resume"
+  ]
+}
+```
+
+The report is also readable via `GET /api/v1/resume/{resume_id}/ats`.
+
+## Pipeline stage and rejection threshold
+
+After ATS scoring, the hiring pipeline assigns each application a `PipelineStage`. Candidates whose `ats_score` falls below the recruiter's configured threshold are moved to `ATS_REJECTED` automatically and do not advance to manual review stages (`ROUND_1`, `ROUND_2`, etc.).
+
+<Warning>
+  An `ATS_REJECTED` stage is set by the pipeline service and is not reversible through the standard API. Recruiters can override it by manually moving the application to a later stage from the Kanban view.
+</Warning>
+
+## Improvement tips
+
+The report includes up to five `improvement_tips` generated from the scoring breakdown:
+
+- **Sections score below 20** → lists the missing sections by name
+- **Keywords score below 25** → lists specific missing keywords (when a JD is available)
+- **Format score below 15** → recommends removing tables and multi-column layouts
+- **Length score below 7** → recommends expanding experience descriptions with metrics
+- **Clarity score below 7** → recommends clear action verbs and concise sentences
+
+<Tip>
+  Job seekers can get JD-specific keyword feedback by using the [resume optimizer](/ai/resume-optimizer), which runs `score_against_jd()` and shows exactly which keywords from the posting are missing from their resume.
+</Tip>

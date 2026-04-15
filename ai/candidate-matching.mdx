@@ -1,0 +1,152 @@
+---
+title: "Semantic candidate-job matching with embeddings"
+description: "How HireFlow uses text-embedding-3-small and hybrid BM25+vector retrieval to rank candidates for jobs and surface relevant openings for job seekers."
+---
+
+HireFlow matches resumes to job descriptions—and job descriptions to resumes—using vector embeddings. Both resumes and jobs are embedded with the same model (`text-embedding-3-small`, 1 536 dimensions) so their representations live in the same semantic space. Cosine similarity then measures how closely a candidate's background aligns with a role's requirements.
+
+## How embedding-based matching works
+
+When a resume is uploaded, the pipeline stores two embeddings:
+
+- **Whole-resume embedding** (`Resume.embedding`) — computed from the first 4 000 characters of raw text. Used for fast candidate-level similarity.
+- **Chunk embeddings** (`ResumeChunk.embedding`) — section-level embeddings used for fine-grained hybrid search.
+
+When a job is posted, its title, description, and requirements are embedded and stored in `Job.embedding`.
+
+Cosine similarity (via pgvector's `<=>` operator) measures the angle between two embedding vectors. A similarity of 1.0 is a perfect match; 0.0 is completely unrelated.
+
+## JobMatcher
+
+`JobMatcher` in `ai/matching/job_matcher.py` exposes two methods:
+
+### `match_jobs_for_resume` — for job seekers
+
+Returns the top N jobs most relevant to a candidate's resume.
+
+```python
+JobMatcher().match_jobs_for_resume(
+    resume_id="abc123",
+    db=db,
+    limit=20,
+    filters={"job_type": "fulltime"},
+    rerank=False,   # True for Premium users
+)
+```
+
+Internally:
+1. Fetches the resume's `raw_text` (up to 3 000 characters as the query).
+2. Runs `HybridRetriever.retrieve_jobs()` — see [hybrid retrieval](#hybrid-retrieval) below.
+3. If `rerank=True` (Premium), passes results through the LLM reranker.
+4. Returns up to `limit` results.
+
+This endpoint is exposed as `GET /api/v1/resume/{resume_id}/jobs`.
+
+### `rank_candidates_for_job` — for recruiters
+
+Returns the top N candidates ranked for a specific job posting.
+
+```python
+JobMatcher().rank_candidates_for_job(
+    job_id="xyz789",
+    db=db,
+    limit=50,
+    rerank=False,
+)
+```
+
+Internally:
+1. Builds a query string from the job title, description, and requirements.
+2. Runs `HybridRetriever.retrieve_candidates()` with the job embedding.
+3. If `rerank=True`, passes results through the LLM reranker (top 10).
+4. Computes a **weighted final score** via `ScoreCalculator` for each candidate.
+5. Sorts by `final_score` descending.
+
+## Weighted final score
+
+For recruiter-facing ranking, the raw similarity score is blended with ATS score and experience fit:
+
+| Component | Weight | Source |
+|-----------|--------|--------|
+| Semantic (hybrid) match | 55% | `HybridRetriever` score |
+| ATS score | 25% | `Resume.ats_score` (normalised to 0–1) |
+| Experience fit | 20% | `total_experience_years` vs `job.required_exp` |
+
+```
+final_score = (semantic × 0.55) + (ats_norm × 0.25) + (exp_fit × 0.20)
+```
+
+The result is multiplied by 100 and stored as `Application.match_score`.
+
+<Note>
+  When `required_exp` is not set on the job, experience fit defaults to 0.8 (neutral). A candidate with exactly the required experience gets 1.0; more experience is capped at 1.0.
+</Note>
+
+## Hybrid retrieval
+
+Pure vector search can miss exact matches for specific tool names or acronyms (e.g. "k8s", "LLM"). The `HybridRetriever` combines vector similarity with BM25 keyword scoring:
+
+<Steps>
+  <Step title="Broad vector search">
+    Retrieves up to 100 candidates (or jobs) with cosine similarity ≥ 0.2 using pgvector.
+  </Step>
+  <Step title="BM25 keyword scoring">
+    Runs an in-memory BM25 ranker over the 100 vector candidates. For jobs, BM25 is computed over `title + description`. For candidates, it's over their skills list and current title.
+  </Step>
+  <Step title="Score fusion">
+    Both scores are normalised to [0, 1] and combined with fixed weights:
+
+    ```
+    hybrid_score = (vector_score × 0.65) + (bm25_score × 0.35)
+    ```
+  </Step>
+  <Step title="Final ranking">
+    Results are sorted by `hybrid_score` and trimmed to the requested limit.
+  </Step>
+</Steps>
+
+The hybrid score is surfaced as `hybrid_score` on each result object. When `ScoreCalculator` runs, it uses this as the `semantic_score` input.
+
+## Match result shape
+
+A result from `match_jobs_for_resume` looks like:
+
+```json
+{
+  "id": "job-uuid",
+  "title": "Backend Engineer",
+  "company": "Acme Corp",
+  "location": "Bengaluru",
+  "similarity": 0.87,
+  "hybrid_score": 0.91
+}
+```
+
+A result from `rank_candidates_for_job` adds:
+
+```json
+{
+  "id": "resume-uuid",
+  "full_name": "Jane Smith",
+  "email": "jane@example.com",
+  "ats_score": 78.0,
+  "hybrid_score": 0.84,
+  "final_score": 82.3
+}
+```
+
+`final_score` (0–100) is what recruiters see in the candidate pipeline ranking.
+
+## LLM reranking (optional)
+
+For Premium users, passing `rerank=True` enables an additional LLM reranking step after hybrid retrieval. The reranker uses GPT-4o-mini to score relevance between the query and each candidate result, then re-sorts the top 10–15 results. This is more accurate for nuanced roles but adds latency.
+
+<Tip>
+  Reranking is disabled by default (`rerank=False`) for all users. It is opt-in because it adds an LLM call per search. Enable it in the API call when you need the highest precision, such as for a senior or specialized role with fewer applicants.
+</Tip>
+
+## Related pages
+
+- [Resume parsing](/ai/resume-analysis) — how embeddings are generated during upload
+- [ATS scoring](/ai/ats-scoring) — the ATS component of the weighted final score
+- [Benchmarking](/ai/benchmarking) — comparing a candidate's embedding against the selected pool

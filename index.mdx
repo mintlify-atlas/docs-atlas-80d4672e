@@ -1,97 +1,79 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "HireFlow: AI-Powered Hiring Portal"
+description: "HireFlow connects job seekers and recruiters through transparent, GenAI-driven resume analysis, ATS scoring, and intelligent candidate matching. No black boxes."
 ---
 
-## Setting up
+HireFlow is a full-stack AI hiring platform built to make recruiting transparent and fast. Job seekers get honest ATS feedback and job matches powered by semantic embeddings; recruiters get AI-ranked candidate lists and a visual pipeline to move candidates through stages — with automatic notifications at every step.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get HireFlow running locally in under 10 minutes with the dev setup guide.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="For Job Seekers" icon="user" href="/job-seekers/overview">
+    Upload your resume, get your ATS score, and find matched jobs instantly.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="For Recruiters" icon="briefcase" href="/recruiters/overview">
+    Post jobs, view AI-ranked candidates, and manage your hiring pipeline.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="API Reference" icon="code" href="/api-reference/auth">
+    Explore all REST endpoints for integrating with HireFlow programmatically.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What HireFlow does
 
-Everything you need to create world-class documentation.
+HireFlow eliminates the opacity of modern hiring. When a candidate applies, their resume is automatically parsed, embedded, and scored against the job description. Recruiters see a ranked list of applicants with match scores and skill breakdowns — no manual sifting required.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={2}>
+  <Card title="Resume Analysis" icon="file-magnifying-glass" href="/ai/resume-analysis">
+    GPT-4o-mini parses resumes into structured data: skills, experience, education, and more.
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="ATS Scoring" icon="chart-bar" href="/ai/ats-scoring">
+    Every resume gets an ATS score with a detailed report showing exactly what passes and what doesn't.
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="AI Job Matching" icon="bullseye" href="/ai/candidate-matching">
+    Semantic embeddings rank candidates and surface best-fit jobs for seekers using pgvector or Pinecone.
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="KAREN AI Agent" icon="robot" href="/job-seekers/karen-ai">
+    An AI career coach that gives brutally honest feedback and helps job seekers improve their applications.
   </Card>
-</Columns>
+  <Card title="Resume Optimizer" icon="wand-magic-sparkles" href="/ai/resume-optimizer">
+    Premium feature: rewrite resume bullets to match specific job descriptions using GPT-4o-mini.
+  </Card>
+  <Card title="Benchmark Comparison" icon="scale-balanced" href="/ai/benchmarking">
+    See how your resume compares to candidates who have been selected or cleared interview rounds.
+  </Card>
+</CardGroup>
 
-## Need inspiration?
+## How it works
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Steps>
+  <Step title="Create your account">
+    Register as a job seeker or recruiter. Job seekers complete a brief onboarding survey about their preferences and target roles.
+  </Step>
+  <Step title="Upload your resume or post a job">
+    Job seekers upload a PDF or DOCX resume — HireFlow's AI pipeline parses it instantly. Recruiters post job descriptions with requirements and salary ranges.
+  </Step>
+  <Step title="Get AI-powered insights">
+    Job seekers receive an ATS score and a list of matched jobs ranked by fit. Recruiters see an AI-ranked candidate list with match score breakdowns.
+  </Step>
+  <Step title="Track the full pipeline">
+    Every application moves through a transparent kanban pipeline. Candidates are notified at each stage — no more wondering where you stand.
+  </Step>
+</Steps>
+
+## Tech stack at a glance
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Next.js 14, Tailwind CSS, Zustand |
+| Backend | FastAPI, SQLAlchemy, Celery |
+| AI | OpenAI GPT-4o-mini + text-embedding-3-small |
+| Vector DB | pgvector (dev) / Pinecone (prod) |
+| Database | SQLite (dev) / PostgreSQL (prod) |
+| Queue | Redis + Celery |
+| Storage | Local (dev) / AWS S3 (prod) |
+
+<Note>
+  Looking for the API? Jump straight to the [API Reference](/api-reference/auth) to authenticate and start making requests.
+</Note>

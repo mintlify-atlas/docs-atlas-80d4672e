@@ -1,0 +1,135 @@
+---
+title: "Chat with KAREN, your AI career coach"
+description: "KAREN is HireFlow's AI career agent — brutally honest coaching backed by your resume, ATS score, and application history, with persistent memory."
+---
+
+KAREN (Knowledge-Augmented Recruitment and Employment Navigator) is HireFlow's built-in AI agent. For job seekers, KAREN acts as a direct, data-driven career coach — no filler phrases, no false encouragement. She has access to your resume, ATS score, skills, and application history, so her feedback is grounded in your actual profile.
+
+## What KAREN can do
+
+- Review your resume and identify specific weaknesses
+- Explain your ATS score and what's dragging it down
+- Identify skills missing from your profile relative to a target role
+- Show you your strongest job matches and explain why
+- **Apply to jobs on your behalf** when you ask her to
+- Suggest follow-up actions based on your current applications
+
+<Note>
+  KAREN can auto-apply to jobs when you explicitly ask. For all other actions — withdrawing applications, updating your profile, changing preferences — she will suggest what to do but will not act without you doing it yourself.
+</Note>
+
+## Starting a conversation
+
+Send a message to KAREN using the chat endpoint:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/karen/chat \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is my ATS score and how do I improve it?"}'
+```
+
+KAREN responds with a reply, an optional `action_taken` field (if she performed an action like applying to a job), and follow-up suggestions:
+
+```json
+{
+  "reply": "Your ATS score is 58 — grade D. The main issues are low keyword density (22/35) and a multi-column layout that most parsers choke on. Specifically, you're missing: Docker, Kubernetes, CI/CD. These appear in over 70% of backend engineering JDs. Fix the layout first — it's costing you 8 points on its own.",
+  "action_taken": null,
+  "suggestions": [
+    "What's my ATS score?",
+    "What skills am I missing for my target role?",
+    "Show me jobs matching my profile",
+    "How do I improve my resume?"
+  ]
+}
+```
+
+## Example conversation
+
+Here's a realistic example of using KAREN to prepare for a specific role:
+
+**You:** I'm targeting senior backend roles at fintech companies. What's holding my resume back?
+
+**KAREN:** Your ATS score is 62 — passable, but you're leaving points on the table. Three problems worth fixing:
+
+1. You list "payment systems" twice but never mention PCI-DSS compliance — that's table stakes for fintech.
+2. Your skills section has 23 items crammed in one line. Parsers see that as a wall of text. Break it into categories.
+3. No quantified achievements in your last two roles. "Improved system performance" means nothing. "Reduced p99 latency from 800ms to 120ms" does.
+
+Fix those three things and you'll likely clear 75.
+
+---
+
+**You:** Apply to the Senior Backend Engineer role at Acme Corp for me.
+
+**KAREN:** Done.
+
+```json
+{
+  "reply": "Done. Application submitted for Senior Backend Engineer at Acme Corp. Your match score for this role is 84 — strong fit. You should hear back within 5–7 business days if they move quickly.",
+  "action_taken": "Applied to: Senior Backend Engineer at Acme Corp",
+  "suggestions": [
+    "What's my ATS score?",
+    "Show me jobs matching my profile"
+  ]
+}
+```
+
+## Role-aware responses
+
+KAREN adapts her style based on your account role:
+
+- **Job seekers** get direct, sometimes sarcastic career coaching rooted in your resume data, ATS score, and application history.
+- **Recruiters** get analytical pipeline insights and candidate comparisons — a different mode entirely.
+
+<Info>
+  Premium users receive more detailed coaching responses, including more granular breakdown analysis and access to JD-specific ATS scoring context.
+</Info>
+
+## Conversation memory
+
+KAREN remembers your previous conversations. She maintains a rolling window of recent messages and automatically summarizes older exchanges to keep context relevant without growing unbounded.
+
+Memory is per-user and persists across sessions. When you start a new conversation, KAREN already knows your history.
+
+**Memory limits:**
+- KAREN keeps the last 10 messages in full
+- When the conversation exceeds 15 messages, older messages are summarized and appended to a running summary
+- The summary is injected into every new conversation as context
+
+### View your memory
+
+```bash
+curl http://localhost:8000/api/v1/karen/memory \
+  -H "Authorization: Bearer <token>"
+```
+
+```json
+{
+  "total_messages": 24,
+  "recent_messages": [
+    { "role": "user", "content": "What's my ATS score?" },
+    { "role": "assistant", "content": "Your ATS score is 68 — grade C. ..." }
+  ],
+  "has_summary": true
+}
+```
+
+### Clear your memory
+
+If you want KAREN to start fresh — for example, after a major resume overhaul — you can wipe her memory entirely:
+
+```bash
+curl -X DELETE http://localhost:8000/api/v1/karen/memory \
+  -H "Authorization: Bearer <token>"
+```
+
+```json
+{
+  "message": "Memory cleared. KAREN has forgotten everything."
+}
+```
+
+<Warning>
+  Clearing memory is permanent. KAREN will lose all context about your previous conversations and coaching sessions. You'll need to re-introduce your goals and situation in your next message.
+</Warning>
